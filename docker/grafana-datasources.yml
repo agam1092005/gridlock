@@ -1,0 +1,35 @@
+# Grafana Datasources Configuration for Gridlock 2.0
+# Configures Prometheus as the primary data source
+
+apiVersion: 1
+
+datasources:
+  # Prometheus - Main metrics data source
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: 15s
+      maxDataPoints: 10000
+    version: 1
+
+  # Loki - Log aggregation (optional, if deployed)
+  # - name: Loki
+  #   type: loki
+  #   access: proxy
+  #   url: http://loki:3100
+  #   editable: true
+  #   version: 1
+
+  # Elasticsearch - Alternative log storage (optional)
+  # - name: Elasticsearch
+  #   type: elasticsearch
+  #   access: proxy
+  #   url: http://elasticsearch:9200
+  #   database: "gridlock-*"
+  #   esVersion: 8.0.0
+  #   editable: true
+  #   version: 1

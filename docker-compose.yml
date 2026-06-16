@@ -1,0 +1,381 @@
+version: '3.8'
+
+# ============================================================================
+# Gridlock 2.0 Docker Compose Configuration
+# Services: API, Dashboard, PostgreSQL, Redis, Prometheus (optional)
+# Features: Health checks, service dependencies, volume management
+# ============================================================================
+
+services:
+  # =========================================================================
+  # PostgreSQL Database Service
+  # =========================================================================
+  postgres:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.postgres
+    container_name: gridlock_postgres
+    environment:
+      POSTGRES_USER: gridlock_user
+      POSTGRES_PASSWORD: gridlock_password
+      POSTGRES_DB: gridlock
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      # Database data persistence
+      - postgres_data:/var/lib/postgresql/data
+      # Initialize schema on first run
+      - ./config/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      # Initialization scripts
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/02-init.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gridlock_user -d gridlock"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - gridlock_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+  # =========================================================================
+  # Redis Cache Service
+  # =========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: gridlock_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      # Cache data persistence
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass "" --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - gridlock_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+  # =========================================================================
+  # Database Migration Service (runs once during startup)
+  # =========================================================================
+  db-migrate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: gridlock_db_migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SERVICE_NAME: migration
+      DATABASE_URL: postgresql://gridlock_user:gridlock_password@postgres:5432/gridlock
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LOG_DIR: /app/logs
+      LOG_LEVEL: INFO
+    volumes:
+      - ./src:/app/src
+      - ./config:/app/config
+      - ./logs:/app/logs
+      - ./dataset:/app/dataset
+    networks:
+      - gridlock_network
+    profiles:
+      - ""  # Run by default in docker-compose up
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: "no"  # Do not restart on failure
+
+  # =========================================================================
+  # FastAPI Backend Service
+  # =========================================================================
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: gridlock_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+    environment:
+      # Service identification
+      SERVICE_NAME: api
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEBUG: ${DEBUG:-false}
+      
+      # API Configuration
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      API_WORKERS: ${API_WORKERS:-4}
+      
+      # Database Configuration
+      DATABASE_URL: postgresql://gridlock_user:gridlock_password@postgres:5432/gridlock
+      DATABASE_POOL_SIZE: 20
+      DATABASE_MAX_OVERFLOW: 40
+      
+      # Cache Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      REDIS_PASSWORD: ""
+      
+      # ML Models Configuration
+      MODEL_ARTIFACTS_DIR: ./models/artifacts
+      EMBEDDING_CACHE_TTL_SECONDS: 86400
+      PREDICTION_CACHE_TTL_SECONDS: 604800
+      
+      # Embedding Configuration
+      EMBEDDING_MODEL: sentence-transformers/bert-base-multilingual-uncased
+      EMBEDDING_BATCH_SIZE: 32
+      EMBEDDING_TIMEOUT_MS: 10000
+      
+      # Latency Budgets
+      LATENCY_BUDGET_MS: 500
+      DATA_PIPELINE_BUDGET_MS: 50
+      MODULE_A_BUDGET_MS: 150
+      MODULE_B_BUDGET_MS: 250
+      PLAYBOOK_BUDGET_MS: 30
+      SHAP_BUDGET_MS: 100
+      
+      # Logging
+      LOG_DIR: /app/logs
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      
+      # Monitoring
+      ENABLE_METRICS: "true"
+      METRICS_PORT: 9090
+    
+    ports:
+      - "8000:8000"    # API port
+      - "9090:9090"    # Prometheus metrics port
+    
+    volumes:
+      # Source code (for development, can be removed in production)
+      - ./src:/app/src
+      - ./config:/app/config
+      - ./models:/app/models
+      - ./logs:/app/logs
+      - ./dataset:/app/dataset
+    
+    networks:
+      - gridlock_network
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    restart: unless-stopped
+
+  # =========================================================================
+  # Streamlit Dashboard Service
+  # =========================================================================
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dashboard
+    container_name: gridlock_dashboard
+    depends_on:
+      api:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Service identification
+      SERVICE_NAME: dashboard
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEBUG: ${DEBUG:-false}
+      
+      # Dashboard Configuration
+      STREAMLIT_PORT: 8501
+      
+      # Backend API Configuration
+      API_URL: http://api:8000
+      API_HOST: api
+      API_PORT: 8000
+      
+      # Database Configuration
+      DATABASE_URL: postgresql://gridlock_user:gridlock_password@postgres:5432/gridlock
+      
+      # Cache Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      REDIS_PASSWORD: ""
+      
+      # Logging
+      LOG_DIR: /app/logs
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    
+    ports:
+      - "8501:8501"
+    
+    volumes:
+      # Source code (for development, can be removed in production)
+      - ./src:/app/src
+      - ./config:/app/config
+      - ./logs:/app/logs
+    
+    networks:
+      - gridlock_network
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    restart: unless-stopped
+
+  # =========================================================================
+  # Prometheus Monitoring Service (Optional)
+  # =========================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: gridlock_prometheus
+    environment:
+      TZ: UTC
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+    networks:
+      - gridlock_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    profiles:
+      - monitoring  # Enable with: docker-compose --profile monitoring up
+
+  # =========================================================================
+  # Grafana Dashboard Visualization (Optional)
+  # =========================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: gridlock_grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      TZ: UTC
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    networks:
+      - gridlock_network
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    profiles:
+      - monitoring  # Enable with: docker-compose --profile monitoring up
+
+# ============================================================================
+# VOLUMES (Data Persistence)
+# ============================================================================
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/postgres
+  
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/redis
+  
+  prometheus_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/prometheus
+  
+  grafana_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data/grafana
+
+# ============================================================================
+# NETWORKS (Service Communication)
+# ============================================================================
+networks:
+  gridlock_network:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: 1500
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

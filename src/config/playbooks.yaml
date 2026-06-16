@@ -1,0 +1,31 @@
+accident:
+  high_severity:
+    actions:
+      - "Dispatch Emergency Services (EMS + Police)"
+      - "Close affected lanes immediately"
+      - "Deploy tow trucks to clear wreckage"
+    communications:
+      - "Issue critical VMS alert: ACCIDENT AHEAD - USE ALT ROUTE"
+      - "Notify local news traffic desks"
+  medium_severity:
+    actions:
+      - "Dispatch Highway Patrol"
+      - "Close 1 lane for safety"
+    communications:
+      - "Issue VMS alert: ACCIDENT AHEAD - REDUCE SPEED"
+
+congestion:
+  high_severity:
+    actions:
+      - "Adjust traffic signal timing for maximum throughput"
+      - "Open HOV lanes to all traffic temporarily"
+    communications:
+      - "Issue VMS alert: HEAVY CONGESTION - EXPECT DELAYS"
+      
+generic_fallback:
+  high_severity:
+    actions:
+      - "Dispatch incident response team for assessment"
+      - "Monitor via CCTV"
+    communications:
+      - "Issue general advisory: INCIDENT AHEAD - EXPECT DELAYS"

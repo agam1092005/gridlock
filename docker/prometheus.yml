@@ -1,0 +1,73 @@
+# Prometheus Configuration for Gridlock 2.0 Monitoring
+# Scrapes metrics from API service and stores time-series data
+
+global:
+  scrape_interval: 15s        # Default scrape interval
+  evaluation_interval: 15s    # Default evaluation interval
+  external_labels:
+    monitor: 'gridlock-monitor'
+    environment: 'docker-compose'
+
+# Alertmanager configuration (optional)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "prometheus-rules.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Gridlock API metrics
+  - job_name: 'gridlock_api'
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['api:9090']
+        labels:
+          service: 'api'
+          component: 'fastapi'
+
+  # PostgreSQL metrics (if postgres-exporter is deployed)
+  - job_name: 'gridlock_postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+    params:
+      collect[]:
+        - database
+        - bgwriter
+        - activity
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: postgres:5432
+
+  # Redis metrics (if redis-exporter is deployed)
+  - job_name: 'gridlock_redis'
+    static_configs:
+      - targets: ['redis:6379']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: redis:6379
+
+# Remote write for long-term storage (optional)
+# remote_write:
+#   - url: "http://remote-storage:9009/api/v1/push"
+#     write_relabel_configs:
+#       - source_labels: [__name__]
+#         regex: 'gridlock.*'
+#         action: keep

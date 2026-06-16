@@ -1,0 +1,20 @@
+api:
+  port: 8000
+  host: "0.0.0.0"
+  latency_budget_ms: 500
+
+models:
+  graph_spatial_radius_km: 5.0
+  prediction_horizon_minutes: 60
+
+monitoring:
+  alert_threshold_latency_ms: 400
+  alert_threshold_error_rate: 0.05
+  
+incident_types:
+  - "accident"
+  - "congestion"
+  - "roadwork"
+  - "weather"
+  - "event"
+  - "other"

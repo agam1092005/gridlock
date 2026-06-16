@@ -1,0 +1,142 @@
+# Gridlock 2.0 Configuration File
+# This file defines all system parameters and can be overridden by environment variables
+
+system:
+  latency_budget_ms: 500
+  environment: development
+  debug: true
+
+api:
+  host: 0.0.0.0
+  port: 8000
+  workers: 4
+  request_timeout_seconds: 30
+  max_concurrent_requests: 1000
+
+database:
+  host: localhost
+  port: 5432
+  name: gridlock
+  user: gridlock_user
+  password: gridlock_password
+  pool_size: 20
+  max_overflow: 40
+  echo_sql: false
+  connection_timeout_seconds: 10
+
+redis:
+  host: localhost
+  port: 6379
+  db: 0
+  password: null
+  socket_timeout: 5
+  connection_timeout: 10
+  retry_on_timeout: true
+
+models:
+  artifacts_directory: ./models/artifacts
+  module_a_severity_model: module_a_severity.pkl
+  module_a_duration_model: module_a_duration.pkl
+  module_b_congestion_model: stgcn_model.pth
+  survival_analyzer_model: survival_analyzer.pkl
+
+ml:
+  embedding_model: sentence-transformers/bert-base-multilingual-uncased
+  embedding_batch_size: 32
+  embedding_cache_ttl_seconds: 86400
+  prediction_cache_ttl_seconds: 604800
+  embedding_timeout_ms: 10000
+  embedding_max_retries: 3
+  embedding_retry_delay_ms: 1000
+
+latency_budgets_ms:
+  data_pipeline: 40
+  module_a: 130
+  module_b: 200
+  playbook: 20
+  shap: 80
+  total: 500
+
+data_pipeline:
+  max_batch_size: 32
+  validation_timeout_ms: 5000
+  embedding_timeout_ms: 10000
+  max_description_length: 5000
+  min_description_length: 10
+  
+logging:
+  level: INFO
+  directory: ./logs
+  format: json
+  max_file_size_mb: 100
+  backup_count: 10
+  console_output: true
+  file_output: true
+
+monitoring:
+  enable_metrics: true
+  metrics_port: 9090
+  health_check_interval_seconds: 60
+  latency_percentile_95_ms: 450
+  latency_percentile_99_ms: 500
+
+spatial_temporal:
+  graph_spatial_radius_km: 2
+  prediction_horizon_minutes: 30
+  prediction_interval_minutes: 5
+  graph_update_hour: 2
+  graph_retraining_day: 6
+  graph_retraining_hour: 3
+  
+incident_types:
+  - accident
+  - congestion
+  - roadwork
+  - weather
+  - unknown
+
+alert_thresholds:
+  validation_error_rate_percent: 10
+  latency_percentile_95_ms: 450
+  latency_percentile_99_ms: 500
+  model_accuracy_degradation_percent: 5
+  error_rate_percent: 5
+
+circuit_breaker:
+  database:
+    failure_threshold: 0.5
+    failure_count_threshold: 5
+    timeout_seconds: 30
+    latency_threshold_ms: 500
+  
+  redis:
+    failure_threshold: 0.5
+    failure_count_threshold: 5
+    timeout_seconds: 30
+    latency_threshold_ms: 500
+  
+  model_api:
+    failure_threshold: 0.5
+    failure_count_threshold: 3
+    timeout_seconds: 60
+    latency_threshold_ms: 150
+
+retry:
+  database:
+    max_retries: 3
+    initial_delay_ms: 100
+    max_delay_ms: 5000
+    exponential_base: 2
+  
+  cache:
+    max_retries: 2
+    initial_delay_ms: 50
+    max_delay_ms: 1000
+    exponential_base: 2
+  
+  external_api:
+    max_retries: 3
+    initial_delay_ms: 200
+    max_delay_ms: 10000
+    exponential_base: 2
+
