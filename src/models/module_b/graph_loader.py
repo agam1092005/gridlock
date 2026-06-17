@@ -54,7 +54,6 @@ class GraphLoader:
             self.edge_index = torch.tensor([[0, 1], [1, 0]], dtype=torch.long).t().contiguous()
             
             # Scatter fallback nodes randomly around Bengaluru center (77.5946, 12.9716)
-            import numpy as np
             np.random.seed(42)
             self.node_coords = {}
             for i in range(num_nodes):

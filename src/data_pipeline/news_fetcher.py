@@ -9,9 +9,9 @@ logger = logging.getLogger(__name__)
 
 class NewsFetcher:
     def __init__(self, query="Bengaluru traffic weather protest rally"):
-        # URL encode the query
-        q = query.replace(" ", "+")
-        self.url = f"https://news.google.com/rss/search?q={q}&hl=en-IN&gl=IN&ceid=IN:en"
+        import urllib.parse
+        q = urllib.parse.quote(query)
+        self.url = f"https://www.bing.com/news/search?q={q}&format=rss"
         self.last_fetch = 0.0
         self.cache = []
         self.cache_ttl = 120 # 2 minutes
@@ -20,7 +20,8 @@ class NewsFetcher:
         now = time.time()
         if now - self.last_fetch > self.cache_ttl or not self.cache:
             try:
-                r = requests.get(self.url, timeout=5)
+                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+                r = requests.get(self.url, headers=headers, timeout=10)
                 root = ET.fromstring(r.text)
                 news = []
                 for item in root.findall('.//item')[:limit*3]:
@@ -49,10 +50,11 @@ class NewsFetcher:
                     if len(news) >= limit:
                         break
                 self.cache = news
-                self.last_fetch = now
                 logger.info(f"Fetched {len(news)} latest news articles.")
             except Exception as e:
                 logger.error(f"Failed to fetch news: {e}")
+            finally:
+                self.last_fetch = now
         
         return self.cache
 

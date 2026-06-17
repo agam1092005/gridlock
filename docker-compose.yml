@@ -132,7 +132,7 @@ services:
       # API Configuration
       API_HOST: 0.0.0.0
       API_PORT: 8000
-      API_WORKERS: ${API_WORKERS:-4}
+      API_WORKERS: 1
       
       # Database Configuration
       DATABASE_URL: postgresql://gridlock_user:gridlock_password@postgres:5432/gridlock
@@ -182,6 +182,7 @@ services:
       - ./models:/app/models
       - ./logs:/app/logs
       - ./dataset:/app/dataset
+      - ~/.cache/huggingface:/root/.cache/huggingface
     
     networks:
       - gridlock_network
@@ -191,7 +192,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 180s
     
     logging:
       driver: "json-file"

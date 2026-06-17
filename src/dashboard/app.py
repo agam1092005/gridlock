@@ -14,6 +14,21 @@ st.set_page_config(page_title="Gridlock 2.0 Live", layout="wide")
 if 'incidents' not in st.session_state:
     st.session_state.incidents = {}
 
+st.markdown("""
+    <style>
+    /* Hide Streamlit header anchor links */
+    .st-emotion-cache-11jqaew.e101o0h10 a {
+        display: none !important;
+    }
+    a.header-anchor {
+        display: none !important;
+    }
+    [data-testid="stHeaderActionElements"] {
+        display: none !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 import os
 
 @st.cache_resource
@@ -59,14 +74,14 @@ def websocket_thread():
         uri = f"ws://{api_host}:8000/ws/live"
         while True:
             try:
-                print(f"Connecting to WS at {uri}")
-                async with websockets.connect(uri) as ws:
-                    print("Connected to WebSocket.")
+                print(f"Connecting to WS at {uri}", flush=True)
+                async with websockets.connect(uri, ping_interval=None) as ws:
+                    print("Connected to WebSocket.", flush=True)
                     while True:
                         msg = await ws.recv()
                         data = json.loads(msg)
                         if data.get("type") == "incident_update":
-                            print(f"Received incident update: {data['incident_id']}")
+                            print(f"Received incident update: {data['incident_id']}", flush=True)
                             # Store to global dictionary instead of session state
                             GLOBAL_INCIDENTS[data["incident_id"]] = data
                             
@@ -82,10 +97,11 @@ def websocket_thread():
                                     if len(GLOBAL_LATENCIES) > 50:
                                         GLOBAL_LATENCIES.pop(0)
                             except Exception as e:
-                                print(f"Latency tracking error: {e}")
+                                print(f"Latency tracking error: {e}", flush=True)
             except Exception as e:
-                print(f"WebSocket Error: {e}")
-                time.sleep(2) # reconnect delay
+                print(f"WebSocket Error: {e}", flush=True)
+                import asyncio
+                await asyncio.sleep(2) # reconnect delay
                 
     asyncio.run(listen_ws())
 
@@ -102,11 +118,11 @@ st.title("🚦 Gridlock 2.0 - Live Dashboard", anchor=False)
 tab1, tab_news, tab2, tab3 = st.tabs(["Live Map", "News Feed", "Playbook & Incidents", "System Status"])
 
 with tab1:
-    col1, col2 = st.columns([3, 1])
+    col1, col2 = st.columns([3, 1], vertical_alignment="center")
     with col1:
-        st.header("Real-Time Incident Map", anchor=False)
+        st.markdown("<h3 style='margin: 0; padding-bottom: 0;'>Real-Time Incident Map</h3>", unsafe_allow_html=True)
     with col2:
-        show_module_b = st.toggle("Show Congestion Prediction", value=True)
+        show_module_b = st.toggle("Show Spatial-Temporal Graph Congestion", value=False)
     
     try:
         from st_theme import st_theme
@@ -127,7 +143,7 @@ with tab1:
     # Map real data
     data = []
     heatmap_data = []
-    for inc_id, inc in GLOBAL_INCIDENTS.items():
+    for inc_id, inc in list(GLOBAL_INCIDENTS.items()):
         data.append({
             "incident_id": inc_id,
             "lat": inc.get("location", {}).get("latitude", 37.7749),
@@ -197,9 +213,9 @@ with tab1:
             layers=layers,
             initial_view_state=view_state,
             tooltip={
-                "html": f"<div style='background: {bg_color}; color: {text_color}; border: 1px solid {border_color}; padding: 12px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); margin: -10px;'>"
+                "html": "<div style='background: var(--background-color, #262730); color: var(--text-color, #FAFAFA); border: 1px solid var(--secondary-background-color, #444444); padding: 12px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); margin: -10px;'>"
                         f"<b style='font-size: 1.1em;'>{{type}}</b><br/>"
-                        f"<hr style='margin: 8px 0; border: 0; border-top: 1px solid {border_color};'/>"
+                        f"<hr style='margin: 8px 0; border: 0; border-top: 1px solid var(--secondary-background-color, {border_color});'/>"
                         f"<b>Severity:</b> {{severity_display}}<br/>"
                         f"<b>Est. Duration:</b> {{duration_display}}<br/>"
                         f"<b>Address:</b> {{address}}<br/><br/>"
@@ -225,15 +241,30 @@ with tab2:
                 df_incidents["severity_score"] = df_incidents["severity_score"].apply(lambda x: f"{x:.3f}%" if pd.notnull(x) else x)
             if "duration_estimate" in df_incidents.columns:
                 df_incidents["duration_estimate"] = df_incidents["duration_estimate"].apply(lambda x: format_duration(x) if pd.notnull(x) else x)
-        st.dataframe(df_incidents)
+        st.dataframe(
+            df_incidents.drop(columns=["incident_id"], errors="ignore"), 
+            use_container_width=True
+        )
         
+        def format_incident_label(inc_id):
+            inc = GLOBAL_INCIDENTS.get(inc_id, {})
+            type_str = str(inc.get("incident_type", "Unknown")).replace("_", " ").title()
+            addr_str = inc.get("metadata", {}).get("address", "Unknown Location") if isinstance(inc.get("metadata"), dict) else "Unknown Location"
+            return f"{type_str} at {addr_str[:40]}{'...' if len(addr_str) > 40 else ''}"
+
         selected_id = st.selectbox(
             "Select Incident for Playbook Details", 
             df_incidents["incident_id"],
+            format_func=format_incident_label,
             key="selected_incident_dropdown"
         )
-        st.subheader(f"Playbook: {selected_id}", anchor=False)
+        st.subheader(f"Playbook: {format_incident_label(selected_id)}", anchor=False)
         inc = GLOBAL_INCIDENTS[selected_id]
+        
+        # Display AI metrics
+        st.write(f"**AI Severity:** {inc.get('severity_score', 50):.1f}/100")
+        st.write(f"**Estimated Duration:** {format_duration(inc.get('duration_estimate', 30))}")
+        st.markdown("---")
         if inc.get("severity_score", 0) >= 70:
             st.error("🚨 HIGH SEVERITY ACTION REQUIRED")
             manpower = "1 Inspector, 4 Traffic Constables"
@@ -258,6 +289,23 @@ with tab2:
         if st.button("Accept Actions & Dispatch"):
             st.success("Actions dispatched and feedback logged.")
             
+        # Display SHAP Explanations
+        explanations = inc.get("explanations", {})
+        if explanations:
+            st.markdown("---")
+            st.write("### AI Explainability (SHAP)")
+            st.caption("Top factors driving the AI's predictions")
+            
+            e_col1, e_col2 = st.columns(2)
+            with e_col1:
+                st.write("**Severity Drivers:**")
+                for item in explanations.get("severity_shap", {}).get("top_features", []):
+                    st.write(f"- {item.get('name', 'Unknown')}: {item.get('shap_value', 0):.2f}")
+            with e_col2:
+                st.write("**Duration Drivers:**")
+                for item in explanations.get("duration_shap", {}).get("top_features", []):
+                    st.write(f"- {item.get('name', 'Unknown')}: {item.get('shap_value', 0):.2f}")
+
         # Display full metadata
         if inc.get("metadata"):
             with st.expander("View Full Historical/Real-time Metadata"):
@@ -311,9 +359,15 @@ with tab_news:
         st.markdown("---")
         
         for n in latest_news:
-            st.markdown(f"**{n.get('title', '')}**")
-            st.caption(f"{n.get('source', '')} • {n.get('pub_date', '')}")
-            st.markdown("")
+            title = n.get('title', '').replace('"', '&quot;')
+            source = n.get('source', '')
+            pub_date = n.get('pub_date', '')
+            st.markdown(f"""
+            <div style="border: 1px solid {border_color}; border-radius: 12px; padding: 16px; margin-bottom: 12px; background-color: {bg_color}; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <h4 style="margin-top: 0; margin-bottom: 8px; font-size: 1.1em; color: {text_color};">{title}</h4>
+                <small style="color: {faded_color}; opacity: 0.8;">{source} &bull; {pub_date}</small>
+            </div>
+            """, unsafe_allow_html=True)
     else:
         st.info("Awaiting live news sync...")
 

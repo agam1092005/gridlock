@@ -31,13 +31,19 @@ def prepare_features(df):
     corridor = df.get('corridor', pd.Series(['']*len(df), index=df.index)).astype(str).str.lower()
     df['is_major_corridor'] = corridor.str.contains('orr|cbd|tumkur', na=False, case=False).astype(int)
     
-    # Fake embedding if it's too slow
-    # In production, we'd use the EmbeddingEngine
-    fake_embed = np.random.randn(len(df), 10)
+    logger.info("Initializing EmbeddingEngine...")
+    from src.data_pipeline.embedding_engine import EmbeddingEngine
+    embedder = EmbeddingEngine()
+    
+    # Extract description or fallback to incident_type
+    texts = df.get('description', df.get('incident_type', pd.Series(['']*len(df), index=df.index))).fillna('').astype(str).tolist()
+    
+    logger.info(f"Generating embeddings for {len(texts)} incidents...")
+    real_embed = embedder.embed(texts)
     
     numeric_feats = df[['latitude', 'longitude', 'priority_numeric', 'is_construction', 'is_event', 'is_heavy_vehicle', 'is_lcv', 'is_major_corridor']].fillna(0).values
     
-    return np.hstack([numeric_feats, fake_embed])
+    return np.hstack([numeric_feats, real_embed])
 
 def main():
     data_path = "dataset/Astram event data_anonymized - Astram event data_anonymizedb40ac87.csv"

@@ -133,7 +133,8 @@ class EmbeddingEngine:
             return np.array([]).reshape(0, self.embedding_dim)
         
         # Generate embeddings
-        embeddings = self.model.encode(texts, convert_to_numpy=True, batch_size=len(texts))
+        batch_size = min(32, len(texts))
+        embeddings = self.model.encode(texts, convert_to_numpy=True, batch_size=batch_size, show_progress_bar=True)
         
         # Apply L2 normalization if requested
         if normalize:

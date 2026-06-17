@@ -7,8 +7,10 @@ logger = logging.getLogger("worker")
 from ..models.module_a.lightgbm_models import LightGBMSeverityModel, LightGBMDurationModel
 from ..models.module_b.inference import ModuleBPredictor
 from ..data_pipeline.news_fetcher import NewsFetcher
+from ..data_pipeline.embedding_engine import EmbeddingEngine
 import numpy as np
 import time
+from typing import Optional
 
 class BackgroundWorker:
     def __init__(self, queue):
@@ -23,15 +25,25 @@ class BackgroundWorker:
         # Load Module B
         self.module_b = ModuleBPredictor(model_path="models/artifacts/module_b/stgcn_model.pth")
         
+        # Load Embedding Engine
+        self.embedder: Optional[EmbeddingEngine] = None
+        try:
+            self.embedder = EmbeddingEngine()
+            logger.info("Successfully loaded IndicBERT EmbeddingEngine.")
+        except Exception as e:
+            logger.error(f"Failed to load EmbeddingEngine: {e}")
+        
         try:
             self.lgb_sev.load(self.model_dir)
             self.lgb_dur.load(self.model_dir)
             logger.info("Successfully loaded ML models in background worker.")
         except Exception as e:
             logger.error(f"Failed to load ML models: {e}")
+            
+        from ..orchestration.shap_explainer import SHAPExplainer
+        self.shap_explainer = SHAPExplainer(mod_a_sev=self.lgb_sev, mod_a_dur=self.lgb_dur)
 
-    @retry_with_backoff(retries=3, backoff_factor=1.5)
-    async def process_incident(self, incident_data):
+    def process_incident(self, incident_data):
         logger.info(f"Processing incident: {incident_data.get('incident_id')}")
         
         # Real ML prediction flow
@@ -56,11 +68,21 @@ class BackgroundWorker:
         corridor = str(metadata.get("corridor", incident_data.get("corridor", ""))).lower()
         is_major_corridor = 1.0 if any(c in corridor for c in ['orr', 'cbd', 'tumkur']) else 0.0
         
-        # Numeric feats (lat, lon, priority, is_construction, is_event, is_heavy_vehicle, is_lcv, is_major_corridor) + fake embed (10 dims)
+        # Numeric feats (lat, lon, priority, is_construction, is_event, is_heavy_vehicle, is_lcv, is_major_corridor)
         numeric_feats = np.array([float(lat), float(lon), priority_numeric, is_construction, is_event, is_heavy_vehicle, is_lcv, is_major_corridor])
-        fake_embed = np.random.randn(10)
         
-        X_input = np.concatenate([numeric_feats, fake_embed]).reshape(1, -1)
+        # Real NLP Embedding
+        text_desc = incident_data.get("description", incident_data.get("incident_type", ""))
+        if self.embedder:
+            try:
+                real_embed = self.embedder.embed([text_desc])[0]
+            except Exception as e:
+                logger.error(f"Embedding failed, falling back to zeros: {e}")
+                real_embed = np.zeros(384)
+        else:
+            real_embed = np.zeros(384)
+        
+        X_input = np.concatenate([numeric_feats, real_embed]).reshape(1, -1)
         
         # 2. Predict
         try:
@@ -76,21 +98,30 @@ class BackgroundWorker:
             incident_data["duration_ci"] = [float(max(0, np.expm1(dur_pred.get("ci_lower", [0])[0]))), float(max(0, np.expm1(dur_pred.get("ci_upper", [100])[0])))]
             incident_data["predicted_by_ai"] = True
             
-            # --- LIVE NEWS INTEGRATION ---
+            # Compute real SHAP explanations
+            incident_data["explanations"] = self.shap_explainer.compute_explanations(incident_data, X_input)
+            
+        except Exception as e:
+            logger.error(f"Prediction failed, falling back: {e}")
+            incident_data["severity_score"] = 50.0
+            incident_data["duration_estimate"] = 30.0
+            incident_data["predicted_by_ai"] = False
+
+        # --- LIVE NEWS INTEGRATION (Run regardless of prediction success) ---
+        try:
             active_news = self.news_fetcher.check_for_active_keywords()
             incident_data["latest_news"] = self.news_fetcher.get_latest_news(limit=5)
             incident_data["active_news_alerts"] = active_news
             
             if active_news:
                 # Dynamically boost AI severity and duration based on real-world news!
-                incident_data["severity_score"] = float(np.clip(incident_data["severity_score"] + 15.0, 0, 100))
-                incident_data["duration_estimate"] = incident_data["duration_estimate"] * 1.5
-            # -----------------------------
-            
-            
+                incident_data["severity_score"] = float(np.clip(incident_data.get("severity_score", 50.0) + 15.0, 0, 100))
+                incident_data["duration_estimate"] = incident_data.get("duration_estimate", 30.0) * 1.5
         except Exception as e:
-            logger.error(f"Prediction failed, falling back: {e}")
-            pass
+            logger.error(f"Live news integration failed: {e}")
+            incident_data["latest_news"] = []
+            incident_data["active_news_alerts"] = []
+        # -----------------------------
             
         # 3. Call Module B with updated severity and location
         try:
@@ -112,10 +143,16 @@ class BackgroundWorker:
             "type": "incident_update",
             **incident_data
         }
+        return message
+
+    async def process_and_broadcast(self, incident):
+        # Run blocking ML inference and network requests in a threadpool
+        import asyncio
+        message = await asyncio.to_thread(self.process_incident, incident)
+        
         from .websocket import ws_manager
         await ws_manager.broadcast(message)
-        
-        logger.info(f"Incident {incident_data.get('incident_id')} processed and broadcast successfully.")
+        logger.info(f"Incident {message.get('incident_id')} processed and broadcast successfully.")
 
     async def run(self):
         self.is_running = True
@@ -124,10 +161,11 @@ class BackgroundWorker:
             if self.queue:
                 incident = self.queue.pop(0)
                 try:
-                    await self.process_incident(incident)
+                    await self.process_and_broadcast(incident)
                 except Exception as e:
                     logger.error(f"Failed to process incident: {e}")
             else:
+                import asyncio
                 await asyncio.sleep(1.0) # Poll interval
 
     def stop(self):
