@@ -57,12 +57,12 @@ def main():
         logger.info("Splits not found. Processing dataset manually...")
         df = pd.read_csv(data_path)
         
-        df['start_datetime'] = pd.to_datetime(df['start_datetime'], errors='coerce')
-        df['end_datetime'] = pd.to_datetime(df['end_datetime'], errors='coerce')
-        df['resolved_datetime'] = pd.to_datetime(df['resolved_datetime'], errors='coerce')
-        df['closed_datetime'] = pd.to_datetime(df['closed_datetime'], errors='coerce')
+        # Force to datetime64[ns] — pickled DataFrames may store these as Period dtype
+        for col in ['start_datetime', 'end_datetime', 'resolved_datetime', 'closed_datetime']:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce').astype('datetime64[ns]')
         end_times = df['end_datetime'].fillna(df['resolved_datetime']).fillna(df['closed_datetime'])
-        df['duration_minutes'] = (end_times - df['start_datetime']).dt.total_seconds() / 60.0
+        df['duration_minutes'] = pd.to_timedelta(end_times - df['start_datetime']).dt.total_seconds() / 60.0
         
         severity = np.zeros(len(df))
         priority_col = df.get('priority', pd.Series(['medium']*len(df), index=df.index))

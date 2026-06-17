@@ -85,14 +85,12 @@ def websocket_thread():
                             # Store to global dictionary instead of session state
                             GLOBAL_INCIDENTS[data["incident_id"]] = data
                             
+                            # Use backend-stamped processing time — avoids server/client
+                            # clock-skew that makes (receive_time - sent_time) unreliable.
                             try:
-                                # Track latency
-                                sent_time_str = data.get("timestamp", "").replace("Z", "+00:00")
-                                if sent_time_str:
-                                    sent_time = datetime.fromisoformat(sent_time_str)
-                                    receive_time = datetime.now(timezone.utc)
-                                    latency_ms = (receive_time - sent_time).total_seconds() * 1000
-                                    GLOBAL_LATENCIES.append(latency_ms)
+                                processing_ms = data.get("api_process_time_ms")
+                                if processing_ms is not None:
+                                    GLOBAL_LATENCIES.append(float(processing_ms))
                                     # Keep last 50 for moving average
                                     if len(GLOBAL_LATENCIES) > 50:
                                         GLOBAL_LATENCIES.pop(0)
@@ -350,19 +348,26 @@ with tab3:
     col1.metric("WebSocket Status", ws_status, "0 errors")
     col2.metric("Total Incidents Tracked", len(GLOBAL_INCIDENTS), "Live")
     
-    # Dynamic real-time latency calculation
+    # backend-stamped processing time (clock-skew proof)
     if GLOBAL_LATENCIES:
         avg_latency_val = sum(GLOBAL_LATENCIES) / len(GLOBAL_LATENCIES)
         avg_latency = f"{avg_latency_val:.0f} ms"
         
-        # Current trend (difference between latest latency and average)
+        # Current trend (difference between latest and rolling average)
         delta_val = GLOBAL_LATENCIES[-1] - avg_latency_val
         delta_str = f"{delta_val:+.0f}ms"
     else:
         avg_latency = "N/A"
         delta_str = "0ms"
-        
-    col3.metric("Avg Backend Latency", avg_latency, delta_str, delta_color="inverse")
+
+    col3.metric(
+        "Avg ML Processing Time",
+        avg_latency,
+        delta_str,
+        delta_color="inverse",
+        help="Pure backend ML pipeline time (api_process_time_ms) stamped by the server. "
+             "Not affected by server/client clock skew.",
+    )
     
     st.write("Recent history playback controls will be integrated here.")
 

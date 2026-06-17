@@ -1,7 +1,12 @@
 """
 IndicBERT Embedding Engine with Async Batching and Caching.
 
-Provides text embedding functionality using IndicBERT model with:
+Provides text embedding functionality using ai4bharat/indic-bert — a BERT-base
+model explicitly trained on 12 Indian languages (Kannada, Hindi, Tamil, etc.)
+by IIT Madras / AI4Bharat. Mean-pooling over the last hidden state is used to
+produce 768-dimensional sentence embeddings.
+
+Features:
 - Redis-based caching (SHA256 hash keys)
 - Batch processing (size 32, timeout 100ms)
 - Exponential backoff retry logic for model loading
@@ -16,7 +21,8 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import redis
-from sentence_transformers import SentenceTransformer
+import torch
+from transformers import AutoTokenizer, AutoModel
 
 from ..utils.logging_config import get_logger
 from ..utils.timing import LatencyTracker, time_operation
@@ -26,20 +32,28 @@ logger = get_logger(__name__)
 
 
 class EmbeddingEngine:
-    """Load and manage IndicBERT model for text embeddings."""
-    
+    """
+    Load and manage ai4bharat/indic-bert for Indic-language text embeddings.
+
+    Uses raw HuggingFace AutoTokenizer + AutoModel with mean-pooling over the
+    last hidden state. This is required because indic-bert is not packaged as
+    a sentence-transformers model (no pooling config in its HF repo).
+
+    Embedding dimension: 768 (BERT-base hidden size).
+    """
+
     def __init__(
         self,
-        model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        model_name: str = "ai4bharat/indic-bert",
         max_retries: int = 5,
         initial_retry_delay_ms: int = 1000,
         device: str = "cpu",
     ):
         """
         Initialize embedding engine with model loading and retry logic.
-        
+
         Args:
-            model_name: HuggingFace model identifier for IndicBERT
+            model_name: HuggingFace model identifier (default: ai4bharat/indic-bert)
             max_retries: Maximum retry attempts for model loading
             initial_retry_delay_ms: Initial retry delay in milliseconds
             device: Device to load model on ('cpu' or 'cuda')
@@ -48,63 +62,71 @@ class EmbeddingEngine:
         self.max_retries = max_retries
         self.initial_retry_delay_ms = initial_retry_delay_ms
         self.device = device
-        self.model: Optional[SentenceTransformer] = None
-        self.embedding_dim: int = 384  # MiniLM embedding dimension
-        
+        self.tokenizer: Optional[AutoTokenizer] = None
+        self.model: Optional[AutoModel] = None
+        self.embedding_dim: int = 768  # BERT-base hidden dimension
+
         # Load model with exponential backoff retry logic
         self._load_model_with_retry()
     
     def _load_model_with_retry(self):
-        """Load IndicBERT model with exponential backoff retry logic."""
+        """Load indic-bert tokenizer + model with exponential backoff retry logic."""
         retry_config = RetryConfig(
             max_retries=self.max_retries,
             initial_delay_ms=self.initial_retry_delay_ms,
-            max_delay_ms=30000,  # Cap at 30 seconds
+            max_delay_ms=30000,
             exponential_base=2.0,
             jitter=True,
         )
-        
+
         last_exception = None
-        
+
         for attempt in range(self.max_retries):
             try:
                 logger.info(
-                    f"Loading IndicBERT model: {self.model_name} (attempt {attempt + 1}/{self.max_retries})",
+                    f"Loading indic-bert model: {self.model_name} (attempt {attempt + 1}/{self.max_retries})",
                     extra={
                         'model_name': self.model_name,
                         'attempt': attempt + 1,
                         'device': self.device,
                     }
                 )
-                
-                self.model = SentenceTransformer(self.model_name, device=self.device)
+
+                # ai4bharat/indic-bert is a gated repo — pass HF token if set.
+                # Set HF_TOKEN in your .env (or HUGGING_FACE_HUB_TOKEN) to avoid
+                # passing it on every CLI invocation.
+                import os
+                hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN") or None
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, token=hf_token)
+                self.model = AutoModel.from_pretrained(self.model_name, token=hf_token)
+                self.model.eval()  # type: ignore
+                if self.device != "cpu" and torch.cuda.is_available():
+                    self.model = self.model.to(self.device)  # type: ignore
+
                 logger.info(
-                    "IndicBERT model loaded successfully",
+                    "indic-bert loaded successfully (768-dim, Indic language support)",
                     extra={'model_name': self.model_name}
                 )
                 return
-            
+
             except Exception as e:
                 last_exception = e
                 logger.warning(
-                    f"Failed to load IndicBERT model (attempt {attempt + 1}/{self.max_retries})",
+                    f"Failed to load indic-bert (attempt {attempt + 1}/{self.max_retries}): {e}",
                     extra={
                         'model_name': self.model_name,
                         'attempt': attempt + 1,
                         'error': str(e),
                     }
                 )
-                
+
                 if attempt < self.max_retries - 1:
                     delay_ms = retry_config.get_delay_ms(attempt)
-                    logger.info(
-                        f"Retrying model loading in {delay_ms}ms",
-                        extra={'delay_ms': delay_ms}
-                    )
+                    logger.info(f"Retrying in {delay_ms}ms", extra={'delay_ms': delay_ms})
                     time.sleep(delay_ms / 1000.0)
-        
+
         logger.error(
-            f"Failed to load IndicBERT model after {self.max_retries} attempts",
+            f"Failed to load indic-bert after {self.max_retries} attempts",
             extra={
                 'model_name': self.model_name,
                 'max_retries': self.max_retries,
@@ -112,34 +134,67 @@ class EmbeddingEngine:
             }
         )
         raise RuntimeError(
-            f"Failed to load IndicBERT model '{self.model_name}' after {self.max_retries} retries: {str(last_exception)}"
+            f"Failed to load indic-bert '{self.model_name}' after {self.max_retries} retries: {str(last_exception)}"
         )
     
+    @staticmethod
+    def _mean_pool(last_hidden_state: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        """
+        Mean-pool the last hidden state weighted by the attention mask.
+        This is the standard way to produce sentence embeddings from a raw BERT model.
+        """
+        # Expand mask to match hidden state shape: (batch, seq_len) → (batch, seq_len, hidden)
+        mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
+        sum_embeddings = torch.sum(last_hidden_state * mask_expanded, dim=1)
+        sum_mask = mask_expanded.sum(dim=1).clamp(min=1e-9)
+        return sum_embeddings / sum_mask
+
     def embed(self, texts: List[str], normalize: bool = True) -> np.ndarray:
         """
-        Generate embeddings for a batch of texts.
-        
+        Generate sentence embeddings for a batch of texts using indic-bert.
+
         Args:
-            texts: List of text strings to embed
+            texts: List of text strings to embed (supports Kannada, Hindi, etc.)
             normalize: Whether to apply L2 normalization
-        
+
         Returns:
             Array of shape (len(texts), 768) with embeddings
         """
-        if not self.model:
+        if self.model is None or self.tokenizer is None:
             raise RuntimeError("Model not loaded")
-        
+
         if not texts:
             return np.array([]).reshape(0, self.embedding_dim)
-        
-        # Generate embeddings
+
         batch_size = min(32, len(texts))
-        embeddings = self.model.encode(texts, convert_to_numpy=True, batch_size=batch_size, show_progress_bar=True)
-        
-        # Apply L2 normalization if requested
+        all_embeddings: List[np.ndarray] = []
+
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            encoded = self.tokenizer(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=512,
+                return_tensors="pt",
+            )
+            if self.device != "cpu" and torch.cuda.is_available():
+                encoded = {k: v.to(self.device) for k, v in encoded.items()}
+
+            with torch.no_grad():
+                outputs = self.model(**encoded)
+
+            # Mean-pool over token dimension (ignore [PAD] tokens via attention mask)
+            batch_embeddings = self._mean_pool(
+                outputs.last_hidden_state, encoded["attention_mask"]
+            ).cpu().numpy()
+            all_embeddings.append(batch_embeddings)
+
+        embeddings = np.vstack(all_embeddings)
+
         if normalize:
             embeddings = self._l2_normalize(embeddings)
-        
+
         return embeddings  # type: ignore
     
     @staticmethod

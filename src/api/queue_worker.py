@@ -81,9 +81,9 @@ class BackgroundWorker:
                 real_embed = self.embedder.embed([text_desc])[0]
             except Exception as e:
                 logger.error(f"Embedding failed, falling back to zeros: {e}")
-                real_embed = np.zeros(384)
+                real_embed = np.zeros(768)
         else:
-            real_embed = np.zeros(384)
+            real_embed = np.zeros(768)
         
         X_input = np.concatenate([numeric_feats, real_embed]).reshape(1, -1)
         
@@ -170,8 +170,9 @@ class BackgroundWorker:
 
         # --- LIVE NEWS INTEGRATION (Run regardless of prediction success) ---
         try:
-            active_news = self.news_fetcher.check_for_active_keywords()
-            incident_data["latest_news"] = self.news_fetcher.get_latest_news(limit=5)
+            # Use hyper-local query built from this incident's address & type
+            active_news = self.news_fetcher.check_for_active_keywords(incident_data=incident_data)
+            incident_data["latest_news"] = self.news_fetcher.fetch_for_incident(incident_data, limit=5)
             incident_data["active_news_alerts"] = active_news
             
             if active_news:

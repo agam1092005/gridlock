@@ -96,9 +96,9 @@ class PredictionOrchestrator:
                 real_embed = self.embedder.embed([text_desc])[0]
             except Exception as e:
                 logger.error(f"Embedding generation failed: {e}")
-                real_embed = np.zeros(384)
+                real_embed = np.zeros(768)
         else:
-            real_embed = np.zeros(384)
+            real_embed = np.zeros(768)
             
         return np.concatenate([numeric_feats, real_embed]).reshape(1, -1)
 
