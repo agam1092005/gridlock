@@ -42,6 +42,9 @@ class BackgroundWorker:
             
         from ..orchestration.shap_explainer import SHAPExplainer
         self.shap_explainer = SHAPExplainer(mod_a_sev=self.lgb_sev, mod_a_dur=self.lgb_dur)
+        
+        from ..orchestration.playbook import PlaybookEngine
+        self.playbook_engine = PlaybookEngine()
 
     def process_incident(self, incident_data):
         logger.info(f"Processing incident: {incident_data.get('incident_id')}")
@@ -94,8 +97,66 @@ class BackgroundWorker:
             
             incident_data["severity_score"] = float(np.clip(sev_pred.get("score", [50])[0], 0, 100))
             incident_data["severity_ci"] = [float(np.clip(sev_pred.get("ci_lower", [0])[0], 0, 100)), float(np.clip(sev_pred.get("ci_upper", [100])[0], 0, 100))]
-            incident_data["duration_estimate"] = float(max(0, np.expm1(raw_est)))
-            incident_data["duration_ci"] = [float(max(0, np.expm1(dur_pred.get("ci_lower", [0])[0]))), float(max(0, np.expm1(dur_pred.get("ci_upper", [100])[0])))]
+            
+            # Check if end_datetime is missing
+            end_dt = incident_data.get("end_datetime")
+            is_missing_end = (end_dt is None or str(end_dt).lower() in ["none", "", "nat"])
+            
+            if is_missing_end:
+                from datetime import datetime, timezone
+                from ..orchestration.survival_model import SurvivalModelSingleton, INCIDENT_TYPE_MAP, PRIORITY_MAP, HISTORICAL_MEDIANS
+                
+                inc_type_str = str(incident_data.get("incident_type") or "event").lower()
+                priority_str = str(metadata.get("priority") or incident_data.get("priority") or "low").lower()
+                
+                if inc_type_str not in INCIDENT_TYPE_MAP or priority_str not in PRIORITY_MAP:
+                    fallback_median = HISTORICAL_MEDIANS.get(inc_type_str, HISTORICAL_MEDIANS["generic_fallback"])
+                    incident_data["duration_estimate"] = fallback_median
+                    incident_data["duration_ci"] = [fallback_median * 0.7, fallback_median * 1.5]
+                    logger.warning(f"Novel feature encountered in worker (type: {inc_type_str}, priority: {priority_str}). Falling back to historical median: {fallback_median}")
+                else:
+                    incident_type_val = INCIDENT_TYPE_MAP[inc_type_str]
+                    priority_val = PRIORITY_MAP[priority_str]
+                    
+                    ts = incident_data.get("timestamp")
+                    if isinstance(ts, str):
+                        try:
+                            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                        except Exception:
+                            dt = datetime.now(timezone.utc)
+                    elif isinstance(ts, datetime):
+                        dt = ts
+                    else:
+                        dt = datetime.now(timezone.utc)
+                    hour_of_day_val = float(dt.hour)
+                    
+                    try:
+                        cph = SurvivalModelSingleton.get_model()
+                        if cph is not None:
+                            import pandas as pd
+                            covariates_df = pd.DataFrame([{
+                                "incident_type": incident_type_val,
+                                "priority": priority_val,
+                                "hour_of_day": hour_of_day_val
+                            }])
+                            duration_est = float(cph.predict_expectation(covariates_df).values[0])
+                            incident_data["duration_estimate"] = duration_est
+                            incident_data["duration_ci"] = [duration_est * 0.7, duration_est * 1.5]
+                            logger.info(f"Calculated survival duration expectation in worker: {duration_est:.2f} mins")
+                        else:
+                            fallback_median = HISTORICAL_MEDIANS.get(inc_type_str, HISTORICAL_MEDIANS["generic_fallback"])
+                            incident_data["duration_estimate"] = fallback_median
+                            incident_data["duration_ci"] = [fallback_median * 0.7, fallback_median * 1.5]
+                    except Exception as e:
+                        fallback_median = HISTORICAL_MEDIANS.get(inc_type_str, HISTORICAL_MEDIANS["generic_fallback"])
+                        incident_data["duration_estimate"] = fallback_median
+                        incident_data["duration_ci"] = [fallback_median * 0.7, fallback_median * 1.5]
+                        logger.error(f"Survival duration expectation failed in worker, falling back to median: {e}")
+            else:
+                duration_est = float(max(0, np.expm1(raw_est)))
+                incident_data["duration_estimate"] = duration_est
+                incident_data["duration_ci"] = [float(max(0, np.expm1(dur_pred.get("ci_lower", [0])[0]))), float(max(0, np.expm1(dur_pred.get("ci_upper", [100])[0])))]
+                
             incident_data["predicted_by_ai"] = True
             
             # Compute real SHAP explanations
@@ -134,6 +195,13 @@ class BackgroundWorker:
             incident_data["module_b_geojson"] = mod_b_res["geojson"]
         except Exception as e:
             logger.error(f"Module B prediction failed: {e}")
+            
+        # Generate playbook recommendation
+        try:
+            incident_data["playbook"] = self.playbook_engine.generate_playbook(incident_data)
+        except Exception as e:
+            logger.error(f"Playbook generation failed in worker: {e}")
+            incident_data["playbook"] = None
             
         process_time_ms = (time.time() - start_time) * 1000
         incident_data["api_process_time_ms"] = process_time_ms

@@ -22,6 +22,8 @@ from .queue_worker import BackgroundWorker
 async def lifespan(app: FastAPI):
     # Startup actions
     logger.info(f"Starting Gridlock 2.0 API on port {settings.api.port}...")
+    from ..orchestration.survival_model import SurvivalModelSingleton
+    SurvivalModelSingleton.load_model()
     worker = BackgroundWorker(incidents._mock_queue)
     worker_task = asyncio.create_task(worker.run())
     

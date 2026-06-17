@@ -10,6 +10,9 @@ router = APIRouter(prefix="/incidents", tags=["incidents"])
 # Mock Redis queue
 _mock_queue = []
 
+# Cache of submitted incidents for lookup
+submitted_incidents = {}
+
 def get_api_key(request: Request) -> str:
     """Extract and validate API key from request."""
     auth_header = request.headers.get("Authorization")
@@ -77,8 +80,10 @@ async def submit_incident(
             detail="Longitude must be between -180 and 180"
         )
     
-    # Enqueue to mock Redis
-    _mock_queue.append({**incident.dict(), "api_key": api_key[:8] + "..."})
+    # Enqueue to mock Redis and cache it
+    incident_dict = incident.model_dump()
+    _mock_queue.append({**incident_dict, "api_key": api_key[:8] + "..."})
+    submitted_incidents[incident.incident_id] = incident_dict
     logger.info(f"Enqueued incident {incident.incident_id} from API key {api_key[:8]}...")
     
     return IncidentResponse(

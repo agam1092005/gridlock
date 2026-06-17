@@ -104,8 +104,17 @@ class ModuleAEnsemble:
         fused_dur = self.w_dur_lgb * lgb_dur_pred['estimate'][0] + self.w_dur_bigru * bigru_dur_val
         
         # 4. Calibration
-        calib_sev = self.calibrators['severity'](fused_sev)
-        calib_dur = self.calibrators['duration'](fused_dur)
+        if self.is_calibrated:
+            try:
+                calib_sev = float(self.severity_calibrator.predict([fused_sev])[0])
+                calib_dur = float(self.duration_calibrator.predict([fused_dur])[0])
+            except Exception as e:
+                logger.error(f"Calibration prediction failed: {e}")
+                calib_sev = fused_sev
+                calib_dur = fused_dur
+        else:
+            calib_sev = fused_sev
+            calib_dur = fused_dur
         
         # Combine CIs from LGB (simplified)
         return {

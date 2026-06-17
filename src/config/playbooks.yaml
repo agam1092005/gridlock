@@ -1,5 +1,8 @@
 accident:
   high_severity:
+    manpower: "1 Inspector, 4 Traffic Constables"
+    barricading: "10 Heavy Barricades, 5 Cones"
+    diversion: "Major detour via adjacent arterial roads. Complete block of node."
     actions:
       - "Dispatch Emergency Services (EMS + Police)"
       - "Close affected lanes immediately"
@@ -8,24 +11,73 @@ accident:
       - "Issue critical VMS alert: ACCIDENT AHEAD - USE ALT ROUTE"
       - "Notify local news traffic desks"
   medium_severity:
+    manpower: "2 Traffic Constables"
+    barricading: "4 Standard Barricades"
+    diversion: "Partial lane closure. Route heavy vehicles to alternate paths."
     actions:
       - "Dispatch Highway Patrol"
       - "Close 1 lane for safety"
     communications:
       - "Issue VMS alert: ACCIDENT AHEAD - REDUCE SPEED"
+  low_severity:
+    manpower: "1 Traffic Constable (Monitor only)"
+    barricading: "None required"
+    diversion: "No diversion needed."
+    actions:
+      - "Monitor scene via patrol vehicle"
+    communications:
+      - "No public alerts required"
 
 congestion:
   high_severity:
+    manpower: "1 Inspector, 4 Traffic Constables"
+    barricading: "10 Heavy Barricades, 5 Cones"
+    diversion: "Major detour via adjacent arterial roads. Complete block of node."
     actions:
       - "Adjust traffic signal timing for maximum throughput"
       - "Open HOV lanes to all traffic temporarily"
     communications:
       - "Issue VMS alert: HEAVY CONGESTION - EXPECT DELAYS"
+  medium_severity:
+    manpower: "2 Traffic Constables"
+    barricading: "4 Standard Barricades"
+    diversion: "Partial lane closure. Route heavy vehicles to alternate paths."
+    actions:
+      - "Manually cycle traffic signals at intersections"
+    communications:
+      - "Issue VMS alert: CONGESTION AHEAD - REDUCE SPEED"
+  low_severity:
+    manpower: "1 Traffic Constable (Monitor only)"
+    barricading: "None required"
+    diversion: "No diversion needed."
+    actions:
+      - "Monitor loop detectors and camera feeds"
+    communications:
+      - "No alerts required"
       
 generic_fallback:
   high_severity:
+    manpower: "1 Inspector, 4 Traffic Constables"
+    barricading: "10 Heavy Barricades, 5 Cones"
+    diversion: "Major detour via adjacent arterial roads. Complete block of node."
     actions:
       - "Dispatch incident response team for assessment"
       - "Monitor via CCTV"
     communications:
       - "Issue general advisory: INCIDENT AHEAD - EXPECT DELAYS"
+  medium_severity:
+    manpower: "2 Traffic Constables"
+    barricading: "4 Standard Barricades"
+    diversion: "Partial lane closure. Route heavy vehicles to alternate paths."
+    actions:
+      - "Dispatch incident patrol unit"
+    communications:
+      - "Issue general advisory: EXPECT DELAYS"
+  low_severity:
+    manpower: "1 Traffic Constable (Monitor only)"
+    barricading: "None required"
+    diversion: "No diversion needed."
+    actions:
+      - "Monitor via traffic cameras"
+    communications:
+      - "No action required"

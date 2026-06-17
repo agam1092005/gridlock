@@ -261,25 +261,53 @@ with tab2:
         st.subheader(f"Playbook: {format_incident_label(selected_id)}", anchor=False)
         inc = GLOBAL_INCIDENTS[selected_id]
         
-        # Display AI metrics
-        st.write(f"**AI Severity:** {inc.get('severity_score', 50):.1f}/100")
+        # Display AI metrics — read raw numeric values from GLOBAL_INCIDENTS (not formatted df)
+        raw_sev = inc.get('severity_score', 50)
+        try:
+            raw_sev = float(raw_sev)
+        except (TypeError, ValueError):
+            raw_sev = 50.0
+        st.write(f"**AI Severity:** {raw_sev:.1f}/100")
         st.write(f"**Estimated Duration:** {format_duration(inc.get('duration_estimate', 30))}")
         st.markdown("---")
-        if inc.get("severity_score", 0) >= 70:
+        playbook = inc.get("playbook", {})
+        if not isinstance(playbook, dict):
+            playbook = {}
+            
+        severity_bucket = playbook.get("severity_bucket")
+        if not severity_bucket:
+            # Fallback based on severity score
+            if raw_sev >= 70:
+                severity_bucket = "high_severity"
+            elif raw_sev >= 40:
+                severity_bucket = "medium_severity"
+            else:
+                severity_bucket = "low_severity"
+        
+        # Pull resources with safe defaults matching the fallback values
+        if severity_bucket == "high_severity":
+            default_manpower = "1 Inspector, 4 Traffic Constables"
+            default_barricading = "10 Heavy Barricades, 5 Cones"
+            default_diversion = "Major detour via adjacent arterial roads. Complete block of node."
+        elif severity_bucket == "medium_severity":
+            default_manpower = "2 Traffic Constables"
+            default_barricading = "4 Standard Barricades"
+            default_diversion = "Partial lane closure. Route heavy vehicles to alternate paths."
+        else:
+            default_manpower = "1 Traffic Constable (Monitor only)"
+            default_barricading = "None required"
+            default_diversion = "No diversion needed."
+
+        manpower = playbook.get("manpower", default_manpower)
+        barricading = playbook.get("barricading", default_barricading)
+        diversion = playbook.get("diversion", default_diversion)
+
+        if severity_bucket == "high_severity":
             st.error("🚨 HIGH SEVERITY ACTION REQUIRED")
-            manpower = "1 Inspector, 4 Traffic Constables"
-            barricading = "10 Heavy Barricades, 5 Cones"
-            diversion = "Major detour via adjacent arterial roads. Complete block of node."
-        elif inc.get("severity_score", 0) >= 40:
+        elif severity_bucket == "medium_severity":
             st.warning("⚠️ MODERATE SEVERITY")
-            manpower = "2 Traffic Constables"
-            barricading = "4 Standard Barricades"
-            diversion = "Partial lane closure. Route heavy vehicles to alternate paths."
         else:
             st.info("ℹ️ LOW SEVERITY")
-            manpower = "1 Traffic Constable (Monitor only)"
-            barricading = "None required"
-            diversion = "No diversion needed."
             
         st.write("### AI Recommended Action Plan")
         st.write(f"**Optimal Manpower:** {manpower}")

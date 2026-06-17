@@ -17,16 +17,26 @@ class PlaybookEngine:
         severity = context.get("severity_score", 0)
         
         # Determine severity bucket
-        sev_key = "high_severity" if severity >= 70.0 else "medium_severity"
+        if severity >= 70.0:
+            sev_key = "high_severity"
+        elif severity >= 40.0:
+            sev_key = "medium_severity"
+        else:
+            sev_key = "low_severity"
         
         # Get template for incident type, fallback to generic
         incident_template = self.templates.get(incident_type, self.templates.get("generic_fallback", {}))
         
-        # Get specific severity actions, fallback to high severity if medium missing
+        # Get specific severity actions, fallback to high severity if key is missing
         rules = incident_template.get(sev_key, incident_template.get("high_severity", {}))
         
         actions_list = rules.get("actions", ["Dispatch response team"])
         comms_list = rules.get("communications", ["Issue general advisory"])
+        
+        # Extract resource configurations
+        manpower = rules.get("manpower", "1 Traffic Constable (Monitor only)")
+        barricading = rules.get("barricading", "None required")
+        diversion = rules.get("diversion", "No diversion needed.")
         
         actions = []
         for i, a in enumerate(actions_list):
@@ -40,6 +50,10 @@ class PlaybookEngine:
         
         return {
             "summary": summary,
+            "severity_bucket": sev_key,
+            "manpower": manpower,
+            "barricading": barricading,
+            "diversion": diversion,
             "actions": actions,
             "communications": {
                 "public_alert": comms_list[0] if comms_list else f"Expect delays due to {context.get('incident_type', 'incident')}.",
