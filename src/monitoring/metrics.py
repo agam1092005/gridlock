@@ -1,6 +1,7 @@
 from collections import defaultdict
 import threading
 
+
 class MetricsRegistry:
     def __init__(self):
         self.counters = defaultdict(int)
@@ -24,13 +25,14 @@ class MetricsRegistry:
         lines = []
         with self.lock:
             for key, val in self.counters.items():
-                name = key.split('{')[0]
+                name = key.split("{")[0]
                 lines.append(f"# TYPE {name} counter")
                 lines.append(f"{key} {val}")
-                
+
             for key, vals in self.histograms.items():
-                if not vals: continue
-                name = key.split('{')[0]
+                if not vals:
+                    continue
+                name = key.split("{")[0]
                 lines.append(f"# TYPE {name} histogram")
                 # Basic mock buckets
                 b100 = sum(1 for v in vals if v <= 100)
@@ -39,9 +41,10 @@ class MetricsRegistry:
                 lines.append(f'{name}_bucket{{le="100"}} {b100}')
                 lines.append(f'{name}_bucket{{le="500"}} {b500}')
                 lines.append(f'{name}_bucket{{le="+Inf"}} {inf}')
-                lines.append(f'{name}_sum {sum(vals)}')
-                lines.append(f'{name}_count {inf}')
-                
+                lines.append(f"{name}_sum {sum(vals)}")
+                lines.append(f"{name}_count {inf}")
+
         return "\n".join(lines)
+
 
 metrics_registry = MetricsRegistry()

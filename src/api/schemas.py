@@ -2,9 +2,11 @@ from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
+
 class LocationInput(BaseModel):
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
+
 
 class IncidentInput(BaseModel):
     incident_id: Optional[str] = None
@@ -14,11 +16,13 @@ class IncidentInput(BaseModel):
     incident_type: str
     metadata: Optional[Dict[str, Any]] = None
 
+
 class IncidentResponse(BaseModel):
     incident_id: str
     status: str
     estimated_completion_ms: int
     request_id: str
+
 
 class ComponentLatencies(BaseModel):
     data_pipeline: float = 0.0
@@ -27,6 +31,7 @@ class ComponentLatencies(BaseModel):
     playbook: float = 0.0
     shap: float = 0.0
     aggregation: float = 0.0
+
 
 class PredictionResponse(BaseModel):
     incident_id: str
@@ -37,6 +42,7 @@ class PredictionResponse(BaseModel):
     explanations: Optional[Dict[str, Any]] = None
     latency_ms: float
     component_latencies_ms: ComponentLatencies
+
 
 class HealthResponse(BaseModel):
     status: str

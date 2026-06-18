@@ -6,6 +6,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger("websocket")
 
+
 class WebSocketManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
@@ -33,19 +34,20 @@ class WebSocketManager:
     async def broadcast(self, message: dict):
         if not self.active_connections:
             return
-            
+
         json_message = json.dumps(message, default=str)
         dead_connections = []
-        
+
         for connection in self.active_connections:
             try:
                 await connection.send_text(json_message)
             except Exception as e:
                 logger.error(f"Error broadcasting to client: {e}")
                 dead_connections.append(connection)
-                
+
         for dead in dead_connections:
             self.disconnect(dead)
+
 
 # Global singleton instance
 ws_manager = WebSocketManager()

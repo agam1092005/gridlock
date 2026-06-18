@@ -18,15 +18,17 @@ logger = logging.getLogger("api")
 
 from .queue_worker import BackgroundWorker
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup actions
     logger.info(f"Starting Gridlock 2.0 API on port {settings.api.port}...")
     from ..orchestration.survival_model import SurvivalModelSingleton
+
     SurvivalModelSingleton.load_model()
     worker = BackgroundWorker(incidents._mock_queue)
     worker_task = asyncio.create_task(worker.run())
-    
+
     yield
     # Shutdown actions
     logger.info("Graceful shutdown initiated. Waiting for in-flight requests (30s timeout)...")
@@ -42,17 +44,20 @@ async def lifespan(app: FastAPI):
         logger.warning("Timeout waiting for websockets to close.")
     logger.info("Flushing cache and finalizing shutdown...")
 
+
 app = FastAPI(
     title="Gridlock 2.0 API",
     description="Intelligent Traffic Incident Management System",
     version="2.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins if hasattr(settings, 'cors_origins') else ["http://localhost:3000", "http://localhost:8501"],
+    allow_origins=settings.cors_origins
+    if hasattr(settings, "cors_origins")
+    else ["http://localhost:3000", "http://localhost:8501"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -60,6 +65,7 @@ app.add_middleware(
 
 # Custom Middleware
 app.add_middleware(TimingAndLoggingMiddleware)
+
 
 # Exception Handlers
 @app.exception_handler(GridlockException)
@@ -72,9 +78,10 @@ async def gridlock_exception_handler(request, exc: GridlockException):
             "detail": exc.message,
             "error_type": exc.error_type.value,
             "context": exc.context,
-            "request_id": getattr(request.state, "request_id", "unknown")
-        }
+            "request_id": getattr(request.state, "request_id", "unknown"),
+        },
     )
+
 
 @app.exception_handler(ValidationError)
 async def validation_error_handler(request, exc: ValidationError):
@@ -86,9 +93,10 @@ async def validation_error_handler(request, exc: ValidationError):
             "detail": exc.message,
             "error_type": exc.error_type.value,
             "context": exc.context,
-            "request_id": getattr(request.state, "request_id", "unknown")
-        }
+            "request_id": getattr(request.state, "request_id", "unknown"),
+        },
     )
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc: RequestValidationError):
@@ -99,9 +107,10 @@ async def validation_exception_handler(request, exc: RequestValidationError):
         content={
             "detail": "Request validation failed",
             "errors": exc.errors(),
-            "request_id": getattr(request.state, "request_id", "unknown")
-        }
+            "request_id": getattr(request.state, "request_id", "unknown"),
+        },
     )
+
 
 # Routers
 app.include_router(incidents.router, prefix="/api")
@@ -111,4 +120,5 @@ app.include_router(ws.router)
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("src.api.main:app", host="0.0.0.0", port=8000, reload=True)

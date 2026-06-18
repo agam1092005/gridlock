@@ -4,6 +4,7 @@ import time
 
 logger = logging.getLogger("latency_monitor")
 
+
 class LatencyMonitor:
     def __init__(self, window_size=5, threshold_ms=500):
         self.history = deque(maxlen=window_size)
@@ -19,12 +20,14 @@ class LatencyMonitor:
             # If all recent requests exceeded threshold
             if all(lat > self.threshold_ms for lat in self.history):
                 if not self.in_fallback_mode:
-                    logger.warning("LATENCY ALERT: 5 consecutive requests > 500ms. Enabling fallback mode.")
+                    logger.warning(
+                        "LATENCY ALERT: 5 consecutive requests > 500ms. Enabling fallback mode."
+                    )
                     self.in_fallback_mode = True
             else:
                 if self.in_fallback_mode:
                     logger.info("Latency recovered. Disabling fallback mode.")
                     self.in_fallback_mode = False
-                    
+
     def should_degrade(self):
         return self.in_fallback_mode

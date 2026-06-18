@@ -5,6 +5,7 @@ import logging
 logger = logging.getLogger("api")
 router = APIRouter(tags=["websocket"])
 
+
 @router.websocket("/ws/live")
 async def websocket_endpoint(websocket: WebSocket):
     await ws_manager.connect(websocket)

@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 class ErrorType(str, Enum):
     """Error type enumeration."""
+
     VALIDATION_ERROR = "validation_error"
     DATA_PIPELINE_ERROR = "data_pipeline_error"
     MODEL_ERROR = "model_error"
@@ -19,7 +20,7 @@ class ErrorType(str, Enum):
 
 class GridlockException(Exception):
     """Base exception for Gridlock 2.0."""
-    
+
     def __init__(
         self,
         message: str,
@@ -29,7 +30,7 @@ class GridlockException(Exception):
     ):
         """
         Initialize exception.
-        
+
         Args:
             message: Error message
             error_type: Type of error
@@ -41,20 +42,20 @@ class GridlockException(Exception):
         self.error_type = error_type
         self.context = context or {}
         self.original_exception = original_exception
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation."""
         return {
-            'message': self.message,
-            'error_type': self.error_type.value,
-            'context': self.context,
-            'original_error': str(self.original_exception) if self.original_exception else None,
+            "message": self.message,
+            "error_type": self.error_type.value,
+            "context": self.context,
+            "original_error": str(self.original_exception) if self.original_exception else None,
         }
 
 
 class ValidationError(GridlockException):
     """Raised when data validation fails."""
-    
+
     def __init__(
         self,
         message: str,
@@ -71,7 +72,7 @@ class ValidationError(GridlockException):
 
 class DataPipelineError(GridlockException):
     """Raised when data pipeline processing fails."""
-    
+
     def __init__(
         self,
         message: str,
@@ -88,7 +89,7 @@ class DataPipelineError(GridlockException):
 
 class ModelError(GridlockException):
     """Raised when model inference or training fails."""
-    
+
     def __init__(
         self,
         message: str,
@@ -105,7 +106,7 @@ class ModelError(GridlockException):
 
 class DatabaseError(GridlockException):
     """Raised when database operations fail."""
-    
+
     def __init__(
         self,
         message: str,
@@ -122,7 +123,7 @@ class DatabaseError(GridlockException):
 
 class CacheError(GridlockException):
     """Raised when cache operations fail."""
-    
+
     def __init__(
         self,
         message: str,
@@ -139,7 +140,7 @@ class CacheError(GridlockException):
 
 class ExternalServiceError(GridlockException):
     """Raised when external service calls fail."""
-    
+
     def __init__(
         self,
         message: str,
@@ -156,7 +157,7 @@ class ExternalServiceError(GridlockException):
 
 class TimeoutError(GridlockException):
     """Raised when operations exceed timeout."""
-    
+
     def __init__(
         self,
         message: str,
@@ -173,7 +174,7 @@ class TimeoutError(GridlockException):
 
 class ConfigurationError(GridlockException):
     """Raised when configuration is invalid."""
-    
+
     def __init__(
         self,
         message: str,

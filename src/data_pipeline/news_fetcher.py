@@ -11,13 +11,13 @@ logger = logging.getLogger(__name__)
 
 # Incident type → human-readable search term
 _INCIDENT_TYPE_TERMS = {
-    "accident":     "road accident crash",
-    "congestion":   "traffic congestion jam",
+    "accident": "road accident crash",
+    "congestion": "traffic congestion jam",
     "road_closure": "road closed blocked",
-    "hazard":       "road hazard obstruction",
-    "event":        "public event rally gathering",
+    "hazard": "road hazard obstruction",
+    "event": "public event rally gathering",
     "waterlogging": "waterlogging flood",
-    "protest":      "protest demonstration",
+    "protest": "protest demonstration",
     "vip_movement": "VIP convoy road block",
 }
 
@@ -58,11 +58,7 @@ def _build_query(incident_data: dict) -> str:
         location_term = str(location_term).split(",")[0].strip()
 
     # 2. Incident type term
-    raw_type = (
-        metadata.get("event_cause")
-        or incident_data.get("incident_type")
-        or ""
-    )
+    raw_type = metadata.get("event_cause") or incident_data.get("incident_type") or ""
     type_term = _INCIDENT_TYPE_TERMS.get(str(raw_type).lower(), str(raw_type).replace("_", " "))
 
     # 3. Compose query
@@ -119,8 +115,18 @@ class NewsFetcher:
         falls back to the base Bengaluru traffic query.
         """
         if keywords is None:
-            keywords = ["storm", "rain", "rally", "protest", "waterlogging",
-                        "accident", "flood", "VIP", "blockade", "strike"]
+            keywords = [
+                "storm",
+                "rain",
+                "rally",
+                "protest",
+                "waterlogging",
+                "accident",
+                "flood",
+                "VIP",
+                "blockade",
+                "strike",
+            ]
 
         if incident_data:
             articles = self.fetch_for_incident(incident_data)
@@ -168,9 +174,7 @@ class NewsFetcher:
 
                 pub_elem = item.find("pubDate")
                 pub_date = (
-                    pub_elem.text
-                    if pub_elem is not None and pub_elem.text
-                    else "Unknown Date"
+                    pub_elem.text if pub_elem is not None and pub_elem.text else "Unknown Date"
                 )
 
                 # Drop articles older than 60 days

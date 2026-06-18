@@ -46,6 +46,10 @@ MANIFEST
 htmlcov/
 .tox/
 .hypothesis/
+.gridlock/
+.kiro/
+.vscode/
+
 
 # Logs
 logs/
@@ -92,3 +96,8 @@ dataset/
 
 # Type checking
 .mypy_cache/
+
+DEPLOYMENT_READY_CHECKLIST.md
+DOCKER.md
+FEATURE_ENCODER.md
+VERIFICATION_COMPLETE.txt
