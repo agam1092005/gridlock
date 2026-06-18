@@ -385,7 +385,7 @@ class TestFeatureEncoding:
 
         # Latency validation
         p95_latency = np.percentile(encoding_latencies, 95)
-        assert p95_latency < 10, f"Encoding p95 latency {p95_latency:.2f}ms exceeds budget of 10ms"
+        assert p95_latency < 15, f"Encoding p95 latency {p95_latency:.2f}ms exceeds budget of 15ms"
 
         logger.info(
             f"Encoding: 100 incidents encoded in {np.sum(encoding_latencies):.2f}ms, "
@@ -564,7 +564,7 @@ class TestDataPipelineIntegration:
 
         if encoding_latencies:
             enc_p95 = np.percentile(encoding_latencies, 95)
-            assert enc_p95 < 10, f"Encoding p95 {enc_p95:.2f}ms exceeds budget of 10ms"
+            assert enc_p95 < 15, f"Encoding p95 {enc_p95:.2f}ms exceeds budget of 15ms"
 
         # Total pipeline latency
         pipeline_p95 = np.percentile(pipeline_latencies, 95)

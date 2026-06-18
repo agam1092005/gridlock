@@ -18,7 +18,8 @@ COPY pyproject.toml poetry.lock* ./
 # [tool.poetry.group.dev.dependencies] rather than the main section.
 RUN pip install --no-cache-dir "poetry==1.8.3" && \
     poetry config virtualenvs.create false && \
-    poetry install --without dev --no-interaction --no-ansi
+    poetry install --without dev --no-interaction --no-ansi && \
+    pip install streamlit-autorefresh==1.0.1
 
 # Copy application code and configuration
 COPY src ./src

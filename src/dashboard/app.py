@@ -7,16 +7,18 @@ import time
 import pandas as pd
 import pydeck as pdk
 from datetime import datetime, timezone
+from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Gridlock 2.0 Live", layout="wide")
+
+# Auto-refresh the entire dashboard every 2 seconds to make it a true live feed
+st_autorefresh(interval=2000, key="data_refresh")
 
 # Persistent state
 if "incidents" not in st.session_state:
     st.session_state.incidents = {}
 if "mitigated_incidents" not in st.session_state:
     st.session_state.mitigated_incidents = set()
-if "mitigation_mode_radio" not in st.session_state:
-    st.session_state.mitigation_mode_radio = "Live/Unmitigated"
 
 st.markdown(
     """
@@ -28,8 +30,14 @@ st.markdown(
     a.header-anchor {
         display: none !important;
     }
-    [data-testid="stHeaderActionElements"] {
+    /* Hide the top header (Deploy button and 3-dot menu) */
+    header[data-testid="stHeader"] {
         display: none !important;
+    }
+    /* Remove the empty space at the top of the page */
+    .block-container {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
     }
     </style>
 """,
@@ -74,9 +82,27 @@ def format_duration(minutes):
     return " ".join(parts)
 
 
+@st.cache_resource
+def get_limit_store():
+    return [50]
+
+
+@st.cache_resource
+def get_received_store():
+    return [0]
+
+
+@st.cache_resource
+def get_seen_store():
+    return set()
+
+
 # Global variable to store incidents from the background thread
 GLOBAL_INCIDENTS = get_incident_store()
 GLOBAL_LATENCIES = get_latency_store()
+GLOBAL_LIMIT = get_limit_store()
+GLOBAL_RECEIVED_COUNT = get_received_store()
+GLOBAL_SEEN_INCIDENTS = get_seen_store()
 
 
 # Background thread for WebSocket connection
@@ -93,9 +119,32 @@ def websocket_thread():
                         msg = await ws.recv()
                         data = json.loads(msg)
                         if data.get("type") == "incident_update":
-                            print(f"Received incident update: {data['incident_id']}", flush=True)
+                            inc_id = data["incident_id"]
+                            is_new = inc_id not in GLOBAL_SEEN_INCIDENTS
+
+                            # Stop adding completely new incidents if we reached the cap
+                            if is_new and GLOBAL_RECEIVED_COUNT[0] >= GLOBAL_LIMIT[0]:
+                                continue
+
+                            # If it's NOT a new incident ID, but it's completely missing from GLOBAL_INCIDENTS,
+                            # it means we successfully mitigated it and deleted it locally!
+                            # We MUST ignore future broadcasts of this ghost incident from the server.
+                            if not is_new and inc_id not in GLOBAL_INCIDENTS:
+                                continue
+
+                            # If we manually downgraded its severity locally, don't let the server overwrite it
+                            if inc_id in GLOBAL_INCIDENTS and GLOBAL_INCIDENTS[inc_id].get(
+                                "_local_override"
+                            ):
+                                continue
+
+                            if is_new:
+                                GLOBAL_RECEIVED_COUNT[0] += 1
+                                GLOBAL_SEEN_INCIDENTS.add(inc_id)
+
+                            print(f"Received incident update: {inc_id}", flush=True)
                             # Store to global dictionary instead of session state
-                            GLOBAL_INCIDENTS[data["incident_id"]] = data
+                            GLOBAL_INCIDENTS[inc_id] = data
 
                             # Use backend-stamped processing time — avoids server/client
                             # clock-skew that makes (receive_time - sent_time) unreliable.
@@ -141,14 +190,6 @@ with tab1:
         )
     with col2:
         show_module_b = st.toggle("Show Spatial-Temporal Graph Congestion", value=False)
-        if show_module_b:
-            mitigation_mode = st.radio(
-                "Forecast Mode",
-                options=["Live/Unmitigated", "With AI Diversion Playbook"],
-                key="mitigation_mode_radio",
-            )
-        else:
-            mitigation_mode = "Live/Unmitigated"
 
     try:
         from st_theme import st_theme
@@ -170,21 +211,34 @@ with tab1:
     # Map real data
     data = []
     heatmap_data = []
-    mitigation_markers = []
+    barricade_markers = []
+    constable_markers = []
     route_data = []
     for inc_id, inc in list(GLOBAL_INCIDENTS.items()):
         lat = inc.get("location", {}).get("latitude", 37.7749)
         lon = inc.get("location", {}).get("longitude", -122.4194)
+
+        # Apply AI Playbook forecasted mitigation to the incident's severity
+        base_severity = inc.get("severity_score", 0)
+        is_mitigated = inc_id in st.session_state.mitigated_incidents
+
+        if is_mitigated:
+            effective_severity = base_severity * 0.4  # Forecast shows 60% reduction in severity
+            sev_label = f"{effective_severity:.1f}% (Forecasted)"
+        else:
+            effective_severity = base_severity
+            sev_label = f"{effective_severity:.1f}%"
+
         data.append(
             {
                 "incident_id": inc_id,
                 "lat": lat,
                 "lon": lon,
-                "severity": inc.get("severity_score", 0),
-                "severity_display": f"{inc.get('severity_score', 0):.3f}%",
+                "severity": effective_severity,
+                "severity_display": sev_label,
                 "color": [255, 0, 0]
-                if inc.get("severity_score", 0) >= 70
-                else ([255, 165, 0] if inc.get("severity_score", 0) >= 50 else [0, 255, 0]),
+                if effective_severity >= 70
+                else ([255, 165, 0] if effective_severity >= 40 else [0, 255, 0]),
                 "type": str(inc.get("incident_type", "Unknown")).replace("_", " ").title(),
                 "desc": str(inc.get("description", "No description"))[:100]
                 + ("..." if len(str(inc.get("description", ""))) > 100 else ""),
@@ -196,45 +250,59 @@ with tab1:
             }
         )
 
-        mod_b = inc.get("module_b_geojson", {})
-        if mod_b and "features" in mod_b:
-            for feat in mod_b["features"]:
-                coords = feat.get("geometry", {}).get("coordinates", [0, 0])
-                weight = float(feat.get("properties", {}).get("weight", 0))
+        if show_module_b:
+            mod_b = inc.get("module_b_geojson", {})
+            if mod_b and "features" in mod_b:
+                # Sample or filter heavily to prevent 400MB map payloads and CPU lockups
+                features = mod_b["features"]
+                for feat in features:
+                    weight = float(feat.get("properties", {}).get("weight", 0))
+                    # Increase threshold to filter out low-weight noise edges
+                    if weight < 0.15:
+                        continue
 
-                if (
-                    mitigation_mode == "With AI Diversion Playbook"
-                    and inc_id in st.session_state.mitigated_incidents
-                ):
-                    weight *= 0.35
+                    coords = feat.get("geometry", {}).get("coordinates", [0, 0])
 
-                if weight > 0.05:
-                    heatmap_data.append({"lon": coords[0], "lat": coords[1], "weight": weight})
+                    if is_mitigated:
+                        weight *= 0.35
 
-        if inc_id in st.session_state.mitigated_incidents:
+                    if weight > 0.05:
+                        heatmap_data.append({"lon": coords[0], "lat": coords[1], "weight": weight})
+        # Automatically show the mitigation markers if the incident has been mitigated
+        if is_mitigated:
             base_address = (
                 inc.get("metadata", {}).get("address", "Unknown Location")
                 if isinstance(inc.get("metadata"), dict)
                 else "Unknown Location"
             )
-            mitigation_markers.append(
+            barricade_markers.append(
                 {
-                    "lat": lat + 0.002,
-                    "lon": lon + 0.002,
+                    "lat": lat + 0.0005,
+                    "lon": lon + 0.0005,
                     "type": "🚧 Barricades Deployed",
-                    "color": [255, 215, 0],
+                    "icon_data": {
+                        "url": "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f6a7.png",
+                        "width": 128,
+                        "height": 128,
+                        "anchorY": 64,
+                    },
                     "severity_display": "Mitigated",
                     "duration_display": "N/A",
                     "address": base_address,
                     "desc": "Barricades successfully deployed on site to restrict flow.",
                 }
             )
-            mitigation_markers.append(
+            constable_markers.append(
                 {
-                    "lat": lat - 0.002,
-                    "lon": lon - 0.002,
+                    "lat": lat - 0.0005,
+                    "lon": lon - 0.0005,
                     "type": "👮 Constables Deployed",
-                    "color": [0, 100, 255],
+                    "icon_data": {
+                        "url": "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/emoji_u1f46e.png",
+                        "width": 128,
+                        "height": 128,
+                        "anchorY": 64,
+                    },
                     "severity_display": "Mitigated",
                     "duration_display": "N/A",
                     "address": base_address,
@@ -253,7 +321,6 @@ with tab1:
 
     df = pd.DataFrame(data)
     df_heatmap = pd.DataFrame(heatmap_data)
-    df_mitigation = pd.DataFrame(mitigation_markers)
     layers = []
 
     if show_module_b and not df_heatmap.empty:
@@ -301,25 +368,34 @@ with tab1:
         )
         layers.append(layer)
 
-    if not df_mitigation.empty:
-        mitigation_layer = pdk.Layer(
-            "ScatterplotLayer",
-            df_mitigation,
-            pickable=True,
-            opacity=1.0,
-            stroked=True,
-            filled=True,
-            radius_scale=6,
-            radius_min_pixels=8,
-            radius_max_pixels=15,
-            line_width_min_pixels=2,
-            get_position="[lon, lat]",
-            get_radius=10,
-            get_fill_color="color",
-            get_line_color=[255, 255, 255],
-        )
-        layers.append(mitigation_layer)
+    df_barricades = pd.DataFrame(barricade_markers)
+    df_constables = pd.DataFrame(constable_markers)
 
+    if not df_barricades.empty:
+        barricades_layer = pdk.Layer(
+            "IconLayer",
+            df_barricades,
+            pickable=True,
+            get_position="[lon, lat]",
+            get_icon="icon_data",
+            get_size=4,
+            size_scale=10,
+        )
+        layers.append(barricades_layer)
+
+    if not df_constables.empty:
+        constables_layer = pdk.Layer(
+            "IconLayer",
+            df_constables,
+            pickable=True,
+            get_position="[lon, lat]",
+            get_icon="icon_data",
+            get_size=4,
+            size_scale=10,
+        )
+        layers.append(constables_layer)
+
+    if not df.empty:
         # Use static center so PyDeck doesn't reset the user's zoom/pan on every refresh
         view_state = pdk.ViewState(latitude=12.9716, longitude=77.5946, zoom=11, pitch=50)
         st.pydeck_chart(
@@ -343,7 +419,9 @@ with tab1:
                         "border": "none",
                     },
                 },
-            )
+            ),
+            height=600,
+            use_container_width=True,
         )
     else:
         st.info("Waiting for incoming incidents via WebSocket...")
@@ -361,9 +439,13 @@ with tab2:
                 df_incidents["duration_estimate"] = df_incidents["duration_estimate"].apply(
                     lambda x: format_duration(x) if pd.notnull(x) else x
                 )
-        st.dataframe(
-            df_incidents.drop(columns=["incident_id"], errors="ignore"), use_container_width=True
-        )
+        # Avoid sending massive nested JSONs (like module_b_geojson or playbook geojsons) to the browser table
+        display_cols = [
+            c
+            for c in ["incident_type", "severity_score", "duration_estimate", "description"]
+            if c in df_incidents.columns
+        ]
+        st.dataframe(df_incidents[display_cols], width="stretch")
 
         def format_incident_label(inc_id):
             inc = GLOBAL_INCIDENTS.get(inc_id, {})
@@ -382,7 +464,10 @@ with tab2:
             key="selected_incident_dropdown",
         )
         st.subheader(f"Playbook: {format_incident_label(selected_id)}", anchor=False)
-        inc = GLOBAL_INCIDENTS[selected_id]
+        inc = GLOBAL_INCIDENTS.get(selected_id)
+        if not inc:
+            st.warning("This incident has expired from the live feed cache.")
+            st.stop()
 
         is_mitigated = selected_id in st.session_state.mitigated_incidents
         status_color = "#4CAF50" if is_mitigated else "#FF9800"
@@ -503,9 +588,22 @@ with tab2:
         import requests
 
         if st.button("Accept Actions & Dispatch"):
-            # Update local UI state
-            st.session_state.mitigated_incidents.add(selected_id)
-            st.session_state.mitigation_mode_radio = "With AI Diversion Playbook"
+            # Find the latitude and longitude of the selected incident
+            target_inc = GLOBAL_INCIDENTS.get(selected_id, {})
+            target_lat = target_inc.get("location", {}).get("latitude", 0)
+            target_lon = target_inc.get("location", {}).get("longitude", 0)
+
+            # Find all incidents within ~1.5km (approx 0.015 degrees)
+            cleared_ids = []
+            for inc_id, inc_data in GLOBAL_INCIDENTS.items():
+                ilat = inc_data.get("location", {}).get("latitude", 0)
+                ilon = inc_data.get("location", {}).get("longitude", 0)
+                if abs(ilat - target_lat) < 0.015 and abs(ilon - target_lon) < 0.015:
+                    cleared_ids.append(inc_id)
+
+            # Update local UI state for ALL affected incidents in the radius
+            for cid in cleared_ids:
+                st.session_state.mitigated_incidents.add(cid)
 
             api_host = os.environ.get("API_HOST", "localhost")
             try:
@@ -523,7 +621,48 @@ with tab2:
                 response = requests.post(url, json=payload, headers=headers)
 
                 if response.status_code == 200:
-                    st.success("Actions dispatched and feedback logged.")
+                    msg = "Actions dispatched and feedback logged."
+                    if len(cleared_ids) > 1:
+                        msg = f"Actions dispatched! {len(cleared_ids)-1} nearby incidents automatically covered by this deployment."
+                    st.success(msg)
+
+                    # Simulate resolution of incidents after a longer period
+                    def clear_incidents(main_id, ids_to_clear):
+                        import time
+
+                        time.sleep(25)  # Simulate 25 seconds for traffic clearing
+                        for cid in ids_to_clear:
+                            if cid in GLOBAL_INCIDENTS:
+                                if cid == main_id:
+                                    # Main incident gets completely cleared
+                                    del GLOBAL_INCIDENTS[cid]
+                                else:
+                                    # Nearby incidents get downgraded
+                                    current_sev = GLOBAL_INCIDENTS[cid].get("severity_score", 0)
+                                    new_sev = current_sev - 30
+
+                                    if new_sev < 40:
+                                        # If it becomes Green (< 40), clear it completely
+                                        del GLOBAL_INCIDENTS[cid]
+                                    else:
+                                        # Otherwise, keep it but drop its severity tier (e.g. Red -> Orange)
+                                        GLOBAL_INCIDENTS[cid]["severity_score"] = new_sev
+                                        GLOBAL_INCIDENTS[cid]["_local_override"] = True
+
+                    import threading
+
+                    threading.Thread(
+                        target=clear_incidents,
+                        args=(
+                            selected_id,
+                            cleared_ids,
+                        ),
+                        daemon=True,
+                    ).start()
+                    st.toast(
+                        f"Constables deployed. Main incident clears in 25s, nearby traffic will downgrade.",
+                        icon="✅",
+                    )
                 else:
                     st.error(f"Failed to dispatch: {response.status_code} - {response.text}")
             except Exception as e:
@@ -560,7 +699,14 @@ with tab3:
     ws_status = "Connected" if len(GLOBAL_INCIDENTS) > 0 else "Waiting for data..."
 
     col1.metric("WebSocket Status", ws_status, "0 errors")
-    col2.metric("Total Incidents Tracked", len(GLOBAL_INCIDENTS), "Live")
+
+    with col2:
+        st.metric(
+            f"Current Active Incidents (Limit: {GLOBAL_LIMIT[0]})", len(GLOBAL_INCIDENTS), "Live"
+        )
+        if st.button("Send 50 more incidents", use_container_width=True):
+            GLOBAL_LIMIT[0] += 50
+            st.rerun()
 
     # backend-stamped processing time (clock-skew proof)
     if GLOBAL_LATENCIES:
@@ -582,8 +728,6 @@ with tab3:
         help="Pure backend ML pipeline time (api_process_time_ms) stamped by the server. "
         "Not affected by server/client clock skew.",
     )
-
-    st.write("Recent history playback controls will be integrated here.")
 
 with tab_news:
     st.subheader("Live State News", anchor=False)
@@ -622,7 +766,3 @@ with tab_news:
             )
     else:
         st.info("Awaiting live news sync...")
-
-# Auto-refresh every 2 seconds to show new incidents
-time.sleep(2)
-st.rerun()
