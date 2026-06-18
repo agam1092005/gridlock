@@ -12,7 +12,7 @@ Tests cover:
 import json
 import pickle
 from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Dict, List, Any
 
 import numpy as np
 import pandas as pd
@@ -39,10 +39,9 @@ class TestSurvivalAnalyzerFitting:
         incident_types = ["accident"] * 100 + ["congestion"] * 100 + ["roadwork"] * 100
         np.random.shuffle(incident_types)
 
-        data = {
+        data: Dict[str, Any] = {
             "incident_id": [f"inc_{i}" for i in range(num_samples)],
             "start_datetime": start_times,
-            "end_datetime": [],  # Will populate with some missing
             "incident_type": incident_types,
             "location_grid_x": np.random.uniform(0, 100, num_samples),
             "location_grid_y": np.random.uniform(0, 100, num_samples),
@@ -53,11 +52,13 @@ class TestSurvivalAnalyzerFitting:
 
         # Add end_datetime (with 30% censoring = missing values)
         durations = np.random.exponential(scale=30, size=num_samples)  # Mean 30 minutes
+        end_datetimes: List[Any] = []
         for i, duration in enumerate(durations):
             if np.random.random() < 0.3:  # 30% censored
-                data["end_datetime"].append(pd.NaT)
+                end_datetimes.append(pd.NaT)
             else:
-                data["end_datetime"].append(start_times[i] + timedelta(minutes=duration))
+                end_datetimes.append(start_times[i] + timedelta(minutes=duration))
+        data["end_datetime"] = end_datetimes
 
         df = pd.DataFrame(data)
         return df
@@ -104,7 +105,7 @@ class TestSurvivalAnalyzerFitting:
         # Create minimal data
         data = {
             "incident_id": [f"inc_{i}" for i in range(5)],
-            "start_datetime": pd.date_range("2024-01-01", periods=5, freq="H"),
+            "start_datetime": pd.date_range("2024-01-01", periods=5, freq="h"),
             "end_datetime": [
                 pd.Timestamp("2024-01-01 00:30:00"),
                 pd.Timestamp("2024-01-01 01:45:00"),
@@ -160,9 +161,9 @@ class TestSurvivalAnalyzerImputation:
 
         # Generate sample data
         num_samples = 300
-        start_times = pd.date_range("2024-01-01", periods=num_samples, freq="H")
+        start_times = pd.date_range("2024-01-01", periods=num_samples, freq="h")
 
-        data = {
+        data: Dict[str, Any] = {
             "incident_id": [f"inc_{i}" for i in range(num_samples)],
             "start_datetime": start_times,
             "incident_type": np.random.choice(["accident", "congestion", "roadwork"], num_samples),
@@ -368,7 +369,7 @@ class TestSurvivalAnalyzerCaching:
         # Create minimal sample data
         data = {
             "incident_id": [f"inc_{i}" for i in range(100)],
-            "start_datetime": pd.date_range("2024-01-01", periods=100, freq="H"),
+            "start_datetime": pd.date_range("2024-01-01", periods=100, freq="h"),
             "end_datetime": [
                 (pd.Timestamp("2024-01-01") + timedelta(hours=i) + timedelta(minutes=30))
                 if i % 3 != 0
@@ -420,7 +421,7 @@ class TestSurvivalAnalyzerCaching:
         # Generate minimal sample data
         data = {
             "incident_id": [f"inc_{i}" for i in range(50)],
-            "start_datetime": pd.date_range("2024-01-01", periods=50, freq="H"),
+            "start_datetime": pd.date_range("2024-01-01", periods=50, freq="h"),
             "end_datetime": [
                 pd.Timestamp("2024-01-01") + timedelta(hours=i) + timedelta(minutes=30)
                 for i in range(50)
@@ -511,7 +512,7 @@ class TestSurvivalAnalyzerEdgeCases:
         """Test getting model status after fitting."""
         data = {
             "incident_id": [f"inc_{i}" for i in range(100)],
-            "start_datetime": pd.date_range("2024-01-01", periods=100, freq="H"),
+            "start_datetime": pd.date_range("2024-01-01", periods=100, freq="h"),
             "end_datetime": [
                 pd.Timestamp("2024-01-01") + timedelta(hours=i) + timedelta(minutes=30)
                 for i in range(100)
@@ -545,9 +546,9 @@ class TestSurvivalAnalyzerIntegration:
         # Create training data
         num_train = 300
         train_start = pd.Timestamp("2024-01-01")
-        train_times = pd.date_range(train_start, periods=num_train, freq="H")
+        train_times = pd.date_range(train_start, periods=num_train, freq="h")
 
-        train_data = {
+        train_data: Dict[str, Any] = {
             "incident_id": [f"train_inc_{i}" for i in range(num_train)],
             "start_datetime": train_times,
             "incident_type": np.random.choice(["accident", "congestion", "roadwork"], num_train),
@@ -632,9 +633,9 @@ class TestSurvivalAnalyzerPropertyBased:
         """Test fitting with various data sizes and censoring rates."""
         np.random.seed(42)
 
-        start_times = pd.date_range("2024-01-01", periods=num_samples, freq="H")
+        start_times = pd.date_range("2024-01-01", periods=num_samples, freq="h")
 
-        data = {
+        data: Dict[str, Any] = {
             "incident_id": [f"inc_{i}" for i in range(num_samples)],
             "start_datetime": start_times,
             "incident_type": np.random.choice(["accident", "congestion"], num_samples),
@@ -668,7 +669,7 @@ class TestSurvivalAnalyzerPropertyBased:
         # Create and fit analyzer
         data = {
             "incident_id": [f"inc_{i}" for i in range(100)],
-            "start_datetime": pd.date_range("2024-01-01", periods=100, freq="H"),
+            "start_datetime": pd.date_range("2024-01-01", periods=100, freq="h"),
             "end_datetime": [
                 pd.Timestamp("2024-01-01") + timedelta(hours=i) + timedelta(minutes=25)
                 for i in range(100)

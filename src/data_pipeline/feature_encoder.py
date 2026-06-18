@@ -158,14 +158,14 @@ class FeatureEncoder:
         for feature in self.numerical_features:
             if feature in df_imputed.columns and df_imputed[feature].isna().any():
                 mean_value = self.feature_means.get(feature, df_imputed[feature].mean())
-                df_imputed[feature].fillna(mean_value, inplace=True)
+                df_imputed[feature] = df_imputed[feature].fillna(mean_value)
                 imputed_features.append(feature)
 
         # Mode imputation for categorical features
         for feature in self.categorical_features:
             if feature in df_imputed.columns and df_imputed[feature].isna().any():
                 mode_value = self.feature_modes.get(feature, "unknown")
-                df_imputed[feature].fillna(mode_value, inplace=True)
+                df_imputed[feature] = df_imputed[feature].fillna(mode_value)
                 imputed_features.append(feature)
 
         return df_imputed, imputed_features
@@ -306,6 +306,9 @@ class FeatureEncoder:
 
         # Standardize numerical features
         numerical_cols = [f for f in self.numerical_features if f in df_imputed.columns]
+        if hasattr(self.scaler, "feature_names_in_"):
+            numerical_cols = [f for f in numerical_cols if f in self.scaler.feature_names_in_]
+
         encoded_data = incident_with_derived.copy()
 
         if numerical_cols:
@@ -319,6 +322,11 @@ class FeatureEncoder:
 
         # One-hot encode categorical features
         categorical_cols = [f for f in self.categorical_features if f in df_imputed.columns]
+        if hasattr(self.categorical_encoder, "feature_names_in_"):
+            categorical_cols = [
+                f for f in categorical_cols if f in self.categorical_encoder.feature_names_in_
+            ]
+
         if categorical_cols:
             df_categorical = df_imputed[categorical_cols]
             try:

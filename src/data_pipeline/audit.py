@@ -8,7 +8,7 @@ Records all validation operations with detailed metrics including:
 - Error tracking
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 from collections import defaultdict
 import json
@@ -53,7 +53,7 @@ class AuditLogger:
             Created AuditLogEntry
         """
         entry = AuditLogEntry(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             operation=operation,
             incident_id=incident_id,
             status=status,
@@ -124,7 +124,7 @@ class AuditLogger:
         self.validation_stats.valid_records += records_valid
         self.validation_stats.invalid_records += records_invalid
         self.validation_stats.duplicates_detected += duplicates_detected
-        self.validation_stats.timestamp = datetime.utcnow()
+        self.validation_stats.timestamp = datetime.now(timezone.utc)
 
         if self.validation_stats.total_records > 0:
             self.validation_stats.pass_rate = (

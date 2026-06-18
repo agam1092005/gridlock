@@ -120,3 +120,16 @@ testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 asyncio_mode = "auto"
 addopts = "--cov=src --cov-report=term-missing --cov-report=html"
+filterwarnings = [
+    "ignore:builtin type swigvarlink has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type SwigPyPacked has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type SwigPyObject has no __module__ attribute:DeprecationWarning",
+    "ignore:The set_bad function will be deprecated",
+    "ignore:The set_over function will be deprecated",
+    "ignore:The set_under function will be deprecated",
+    "ignore:.*Downcasting object dtype arrays.*:FutureWarning",
+    "ignore:.*high sample correlation*:UserWarning",
+    "ignore:.*very low variance*:UserWarning",
+    "ignore:.*more variables than samples*:UserWarning",
+    "ignore::lifelines.utils.ConvergenceWarning"
+]

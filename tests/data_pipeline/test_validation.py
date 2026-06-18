@@ -13,7 +13,7 @@ Tests cover:
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from pydantic import ValidationError as PydanticValidationError
@@ -114,7 +114,7 @@ class TestIncidentInputModel:
         """Test valid incident data."""
         incident_data = {
             "location": {"latitude": -33.8688, "longitude": 151.2093},
-            "timestamp": datetime.utcnow() - timedelta(minutes=5),
+            "timestamp": datetime.now(timezone.utc) - timedelta(minutes=5),
             "description": "Multi-vehicle collision on M1 northbound",
             "incident_type": IncidentType.ACCIDENT,
         }
@@ -134,7 +134,7 @@ class TestIncidentInputModel:
         """Test description minimum length."""
         incident_data = {
             "location": {"latitude": -33.8688, "longitude": 151.2093},
-            "timestamp": datetime.utcnow() - timedelta(minutes=5),
+            "timestamp": datetime.now(timezone.utc) - timedelta(minutes=5),
             "description": "short",  # Less than 10 characters
         }
         with pytest.raises(PydanticValidationError):
@@ -144,7 +144,7 @@ class TestIncidentInputModel:
         """Test description maximum length."""
         incident_data = {
             "location": {"latitude": -33.8688, "longitude": 151.2093},
-            "timestamp": datetime.utcnow() - timedelta(minutes=5),
+            "timestamp": datetime.now(timezone.utc) - timedelta(minutes=5),
             "description": "x" * 5001,  # More than 5000 characters
         }
         with pytest.raises(PydanticValidationError):
@@ -154,7 +154,7 @@ class TestIncidentInputModel:
         """Test that future timestamps fail validation."""
         incident_data = {
             "location": {"latitude": -33.8688, "longitude": 151.2093},
-            "timestamp": datetime.utcnow() + timedelta(hours=1),  # Future
+            "timestamp": datetime.now(timezone.utc) + timedelta(hours=1),  # Future
             "description": "Valid incident description",
         }
         with pytest.raises(PydanticValidationError):
@@ -162,7 +162,7 @@ class TestIncidentInputModel:
 
     def test_end_datetime_before_timestamp_fails(self):
         """Test that end_datetime before timestamp fails."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         incident_data = {
             "location": {"latitude": -33.8688, "longitude": 151.2093},
             "timestamp": now - timedelta(minutes=10),
@@ -177,9 +177,9 @@ class TestIncidentInputModel:
         """Test that future end_datetime fails."""
         incident_data = {
             "location": {"latitude": -33.8688, "longitude": 151.2093},
-            "timestamp": datetime.utcnow() - timedelta(minutes=10),
+            "timestamp": datetime.now(timezone.utc) - timedelta(minutes=10),
             "description": "Valid incident description",
-            "end_datetime": datetime.utcnow() + timedelta(hours=1),  # Future
+            "end_datetime": datetime.now(timezone.utc) + timedelta(hours=1),  # Future
             "is_ongoing": False,
         }
         with pytest.raises(PydanticValidationError):
@@ -187,7 +187,7 @@ class TestIncidentInputModel:
 
     def test_is_ongoing_with_end_datetime_fails(self):
         """Test that is_ongoing=True with end_datetime fails."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         incident_data = {
             "location": {"latitude": -33.8688, "longitude": 151.2093},
             "timestamp": now - timedelta(minutes=10),
@@ -202,7 +202,7 @@ class TestIncidentInputModel:
         """Test that is_ongoing=False requires end_datetime."""
         incident_data = {
             "location": {"latitude": -33.8688, "longitude": 151.2093},
-            "timestamp": datetime.utcnow() - timedelta(minutes=10),
+            "timestamp": datetime.now(timezone.utc) - timedelta(minutes=10),
             "description": "Valid incident description",
             "is_ongoing": False
             # Missing end_datetime
@@ -215,7 +215,7 @@ class TestIncidentInputModel:
         # Valid: 0-100
         incident_data = {
             "location": {"latitude": -33.8688, "longitude": 151.2093},
-            "timestamp": datetime.utcnow() - timedelta(minutes=5),
+            "timestamp": datetime.now(timezone.utc) - timedelta(minutes=5),
             "description": "Valid incident description",
             "severity_initial": 75,
         }
@@ -239,7 +239,7 @@ class TestDuplicateDetector:
     def test_no_duplicates_different_type(self):
         """Test that incidents of different types are not duplicates."""
         detector = DuplicateDetector()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         detector.add_incident(
             "incident_1",
@@ -260,7 +260,7 @@ class TestDuplicateDetector:
     def test_no_duplicates_outside_time_window(self):
         """Test that incidents outside time window are not duplicates."""
         detector = DuplicateDetector(time_window_minutes=30)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         detector.add_incident(
             "incident_1",
@@ -278,7 +278,7 @@ class TestDuplicateDetector:
     def test_no_duplicates_outside_distance(self):
         """Test that incidents outside distance threshold are not duplicates."""
         detector = DuplicateDetector(distance_threshold_km=2.0)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         detector.add_incident(
             "incident_1",
@@ -297,7 +297,7 @@ class TestDuplicateDetector:
     def test_detects_duplicate_same_location_time_type(self):
         """Test that duplicate is detected with same location, time, type."""
         detector = DuplicateDetector(time_window_minutes=30, distance_threshold_km=2.0)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         detector.add_incident(
             "incident_1",
@@ -318,7 +318,7 @@ class TestDuplicateDetector:
     def test_multiple_duplicates(self):
         """Test detection of multiple duplicates."""
         detector = DuplicateDetector()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Add three related incidents
         for i in range(3):
@@ -350,7 +350,7 @@ class TestIncidentValidator:
         return {
             "incident_id": str(uuid4()),
             "location": {"latitude": -33.8688, "longitude": 151.2093},
-            "timestamp": (datetime.utcnow() - timedelta(minutes=5)).isoformat(),
+            "timestamp": (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
             "description": "Multi-vehicle collision on M1 northbound, 2 lanes blocked",
             "incident_type": "accident",
             "severity_initial": 75,
@@ -379,7 +379,9 @@ class TestIncidentValidator:
 
     def test_validate_timestamp_in_future(self, validator, valid_incident_data):
         """Test validation fails for future timestamp."""
-        valid_incident_data["timestamp"] = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+        valid_incident_data["timestamp"] = (
+            datetime.now(timezone.utc) + timedelta(hours=1)
+        ).isoformat()
         result = validator.validate_single(valid_incident_data)
         assert result.valid is False
 
@@ -618,7 +620,7 @@ class TestValidationIntegration:
         incident_data = {
             "incident_id": str(uuid4()),
             "location": {"latitude": -33.8688, "longitude": 151.2093},
-            "timestamp": (datetime.utcnow() - timedelta(minutes=5)).isoformat(),
+            "timestamp": (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
             "description": "Multi-vehicle collision on M1 northbound",
             "incident_type": "accident",
         }
@@ -650,7 +652,7 @@ class TestValidationIntegration:
                 {
                     "incident_id": str(uuid4()),
                     "location": {"latitude": -33.8688 + (i * 0.01), "longitude": 151.2093},
-                    "timestamp": (datetime.utcnow() - timedelta(minutes=5)).isoformat(),
+                    "timestamp": (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
                     "description": f"Incident {i}: Multi-vehicle collision on M1 northbound",
                     "incident_type": "accident",
                 }

@@ -374,8 +374,14 @@ class TestFeatureEncoding:
 
         # Check for NaN or inf values
         for encoded in encoded_features_list:
-            assert not np.any(np.isnan(encoded)), "Encoded features should not contain NaN"
-            assert not np.any(np.isinf(encoded)), "Encoded features should not contain inf"
+            numeric_vals = [
+                v
+                for v in encoded.values()
+                if isinstance(v, (int, float, np.number)) and not isinstance(v, bool)
+            ]
+            numeric_array = np.array(numeric_vals, dtype=float)
+            assert not np.any(np.isnan(numeric_array)), "Encoded features should not contain NaN"
+            assert not np.any(np.isinf(numeric_array)), "Encoded features should not contain inf"
 
         # Latency validation
         p95_latency = np.percentile(encoding_latencies, 95)
@@ -766,12 +772,20 @@ class TestDataPipelineIntegration:
         assert len(dimensions) == 1, f"Feature vectors have inconsistent dimensions: {dimensions}"
 
         # No NaN or inf values
+        numeric_vectors = []
         for i, vector in enumerate(feature_vectors):
-            assert not np.any(np.isnan(vector)), f"Feature vector {i} contains NaN"
-            assert not np.any(np.isinf(vector)), f"Feature vector {i} contains inf"
+            numeric_vals = [
+                v
+                for v in vector.values()
+                if isinstance(v, (int, float, np.number)) and not isinstance(v, bool)
+            ]
+            numeric_array = np.array(numeric_vals, dtype=float)
+            assert not np.any(np.isnan(numeric_array)), f"Feature vector {i} contains NaN"
+            assert not np.any(np.isinf(numeric_array)), f"Feature vector {i} contains inf"
+            numeric_vectors.append(numeric_vals)
 
         # Convert to numpy array for statistics
-        feature_array = np.array(feature_vectors)
+        feature_array = np.array(numeric_vectors)
 
         logger.info(
             f"Feature vector statistics:\n"

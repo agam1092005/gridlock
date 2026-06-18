@@ -5,7 +5,7 @@ Provides comprehensive validation for incident input data, weather information,
 and validation results with strong type checking and business rule validation.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import UUID
@@ -98,7 +98,7 @@ class IncidentInput(BaseModel):
     @classmethod
     def validate_timestamp_not_in_future(cls, v: datetime) -> datetime:
         """Ensure timestamp is not in the future."""
-        if v > datetime.utcnow():
+        if v > datetime.now(timezone.utc):
             raise ValueError("Timestamp cannot be in the future")
         return v
 
@@ -113,7 +113,7 @@ class IncidentInput(BaseModel):
         if timestamp and v <= timestamp:
             raise ValueError("end_datetime must be after timestamp")
 
-        if v > datetime.utcnow():
+        if v > datetime.now(timezone.utc):
             raise ValueError("end_datetime cannot be in the future")
 
         return v
@@ -183,7 +183,8 @@ class ValidationResult(BaseModel):
     )
     warnings: List[str] = Field(default_factory=list, description="Non-blocking warnings")
     validation_timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="When validation was performed"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="When validation was performed",
     )
     validation_duration_ms: float = Field(
         0.0, description="Time taken for validation in milliseconds"
@@ -214,7 +215,8 @@ class AuditLogEntry(BaseModel):
     )
 
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="When the operation occurred"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="When the operation occurred",
     )
     operation: str = Field(
         ..., description="Type of operation (validation, embedding, imputation, etc.)"
@@ -251,5 +253,6 @@ class ValidationStats(BaseModel):
     avg_validation_time_ms: float = Field(0.0, description="Average validation time per record")
     duplicates_detected: int = Field(0, description="Number of duplicate incidents detected")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="When these stats were calculated"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="When these stats were calculated",
     )

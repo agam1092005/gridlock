@@ -351,8 +351,8 @@ class PredictionOrchestrator:
         t0 = time.time()
         try:
             res_a = await asyncio.wait_for(
-                self._call_module_a(context), timeout=1.0
-            )  # slightly relaxed timeout for embedding engine lookup
+                self._call_module_a(context), timeout=5.0
+            )  # slightly relaxed timeout for embedding engine lookup & external APIs
         except asyncio.TimeoutError:
             logger.warning("Module A execution timed out. Falling back to default baseline values.")
             res_a = {"severity_score": 50.0, "duration_estimate": 30.0}
