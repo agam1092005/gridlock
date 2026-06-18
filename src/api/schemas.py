@@ -8,6 +8,12 @@ class LocationInput(BaseModel):
     longitude: float = Field(..., ge=-180, le=180)
 
 
+class FeedbackInput(BaseModel):
+    approval_status: str
+    finalized_manpower: str
+    finalized_barricading: str
+
+
 class IncidentInput(BaseModel):
     incident_id: Optional[str] = None
     location: LocationInput

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request, status, Depends
-from ..schemas import IncidentInput, IncidentResponse
+from ..schemas import IncidentInput, IncidentResponse, FeedbackInput
 from ..middleware import verify_api_key
 import uuid
 import logging
@@ -90,3 +90,15 @@ async def submit_incident(
         estimated_completion_ms=250,
         request_id=request_id,
     )
+
+
+@router.post("/{incident_id}/feedback", status_code=200)
+async def submit_feedback(
+    incident_id: str, feedback: FeedbackInput, request: Request, api_key: str = Depends(get_api_key)
+):
+    """
+    Submit HITL operator feedback for model retraining.
+    """
+    logger.info(f"Feedback received for incident {incident_id}: {feedback.model_dump()}")
+    # Here we would normally log this to a DB for model retraining
+    return {"status": "success", "message": "Feedback logged successfully"}

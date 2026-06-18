@@ -137,6 +137,10 @@ with tab1:
         )
     with col2:
         show_module_b = st.toggle("Show Spatial-Temporal Graph Congestion", value=False)
+        if show_module_b:
+            mitigation_mode = st.radio("Forecast Mode", options=["Live/Unmitigated", "With AI Diversion Playbook"])
+        else:
+            mitigation_mode = "Live/Unmitigated"
 
     try:
         from st_theme import st_theme
@@ -184,8 +188,12 @@ with tab1:
         if mod_b and "features" in mod_b:
             for feat in mod_b["features"]:
                 coords = feat.get("geometry", {}).get("coordinates", [0, 0])
-                weight = feat.get("properties", {}).get("weight", 0)
-                if weight > 0:
+                weight = float(feat.get("properties", {}).get("weight", 0))
+                
+                if mitigation_mode == "With AI Diversion Playbook":
+                    weight *= 0.35
+                    
+                if weight > 0.05:
                     heatmap_data.append({"lon": coords[0], "lat": coords[1], "weight": weight})
 
     df = pd.DataFrame(data)
@@ -336,13 +344,53 @@ with tab2:
         else:
             st.info("ℹ️ LOW SEVERITY")
 
+        translate_to_kannada = st.toggle("🌐 Translate for Field Officers (Kannada)", value=False)
+        
+        KANNADA_TRANSLATIONS = {
+            "1 Inspector, 4 Traffic Constables": "1 ಇನ್ಸ್‌ಪೆಕ್ಟರ್, 4 ಟ್ರಾಫಿಕ್ ಕಾನ್‌ಸ್ಟೇಬಲ್‌ಗಳು",
+            "2 Traffic Constables": "2 ಟ್ರಾಫಿಕ್ ಕಾನ್‌ಸ್ಟೇಬಲ್‌ಗಳು",
+            "1 Traffic Constable (Monitor only)": "1 ಟ್ರಾಫಿಕ್ ಕಾನ್‌ಸ್ಟೇಬಲ್ (ಮಾನಿಟರ್ ಮಾತ್ರ)",
+            "10 Heavy Barricades, 5 Cones": "10 ಹೆವಿ ಬ್ಯಾರಿಕೇಡ್‌ಗಳು, 5 ಕೋನ್‌ಗಳು",
+            "4 Standard Barricades": "4 ಸ್ಟ್ಯಾಂಡರ್ಡ್ ಬ್ಯಾರಿಕೇಡ್‌ಗಳು",
+            "None required": "ಯಾವುದೇ ಅಗತ್ಯವಿಲ್ಲ",
+            "Major detour via adjacent arterial roads. Complete block of node.": "ಪಕ್ಕದ ರಸ್ತೆಗಳ ಮೂಲಕ ಪ್ರಮುಖ ಬಳಸುದಾರಿ. ಜಂಕ್ಷನ್ ಸಂಪೂರ್ಣ ಬ್ಲಾಕ್.",
+            "Partial lane closure. Route heavy vehicles to alternate paths.": "ಭಾಗಶಃ ಲೇನ್ ಮುಚ್ಚುವಿಕೆ. ಭಾರೀ ವಾಹನಗಳನ್ನು ಪರ್ಯಾಯ ಮಾರ್ಗಗಳಿಗೆ ತಿರುಗಿಸಿ.",
+            "No diversion needed.": "ಯಾವುದೇ ತಿರುವು ಅಗತ್ಯವಿಲ್ಲ."
+        }
+
+        display_manpower = KANNADA_TRANSLATIONS.get(manpower, manpower) if translate_to_kannada else manpower
+        display_barricading = KANNADA_TRANSLATIONS.get(barricading, barricading) if translate_to_kannada else barricading
+        display_diversion = KANNADA_TRANSLATIONS.get(diversion, diversion) if translate_to_kannada else diversion
+
         st.write("### AI Recommended Action Plan")
-        st.write(f"**Optimal Manpower:** {manpower}")
-        st.write(f"**Required Barricading:** {barricading}")
-        st.write(f"**Diversion Strategy:** {diversion}")
+        st.write(f"**Optimal Manpower:** {display_manpower}")
+        st.write(f"**Required Barricading:** {display_barricading}")
+        st.write(f"**Diversion Strategy:** {display_diversion}")
+
+        import requests
 
         if st.button("Accept Actions & Dispatch"):
-            st.success("Actions dispatched and feedback logged.")
+            api_host = os.environ.get("API_HOST", "localhost")
+            try:
+                # Use environment API key or a default
+                api_key = os.environ.get("API_KEY", "test-key-12345")
+                headers = {"Authorization": f"Bearer {api_key}"}
+                payload = {
+                    "approval_status": "approved",
+                    "finalized_manpower": manpower,
+                    "finalized_barricading": barricading
+                }
+                url = f"http://{api_host}:8000/api/incidents/{selected_id}/feedback"
+                
+                # Execute synchronous POST request
+                response = requests.post(url, json=payload, headers=headers)
+                
+                if response.status_code == 200:
+                    st.success("Actions dispatched and feedback logged.")
+                else:
+                    st.error(f"Failed to dispatch: {response.status_code} - {response.text}")
+            except Exception as e:
+                st.error(f"Network error: {e}")
 
         # Display SHAP Explanations
         explanations = inc.get("explanations", {})
