@@ -13,6 +13,10 @@ st.set_page_config(page_title="Gridlock 2.0 Live", layout="wide")
 # Persistent state
 if "incidents" not in st.session_state:
     st.session_state.incidents = {}
+if "mitigated_incidents" not in st.session_state:
+    st.session_state.mitigated_incidents = set()
+if "mitigation_mode_radio" not in st.session_state:
+    st.session_state.mitigation_mode_radio = "Live/Unmitigated"
 
 st.markdown(
     """
@@ -138,7 +142,11 @@ with tab1:
     with col2:
         show_module_b = st.toggle("Show Spatial-Temporal Graph Congestion", value=False)
         if show_module_b:
-            mitigation_mode = st.radio("Forecast Mode", options=["Live/Unmitigated", "With AI Diversion Playbook"])
+            mitigation_mode = st.radio(
+                "Forecast Mode",
+                options=["Live/Unmitigated", "With AI Diversion Playbook"],
+                key="mitigation_mode_radio",
+            )
         else:
             mitigation_mode = "Live/Unmitigated"
 
@@ -162,12 +170,16 @@ with tab1:
     # Map real data
     data = []
     heatmap_data = []
+    mitigation_markers = []
+    route_data = []
     for inc_id, inc in list(GLOBAL_INCIDENTS.items()):
+        lat = inc.get("location", {}).get("latitude", 37.7749)
+        lon = inc.get("location", {}).get("longitude", -122.4194)
         data.append(
             {
                 "incident_id": inc_id,
-                "lat": inc.get("location", {}).get("latitude", 37.7749),
-                "lon": inc.get("location", {}).get("longitude", -122.4194),
+                "lat": lat,
+                "lon": lon,
                 "severity": inc.get("severity_score", 0),
                 "severity_display": f"{inc.get('severity_score', 0):.3f}%",
                 "color": [255, 0, 0]
@@ -189,15 +201,59 @@ with tab1:
             for feat in mod_b["features"]:
                 coords = feat.get("geometry", {}).get("coordinates", [0, 0])
                 weight = float(feat.get("properties", {}).get("weight", 0))
-                
-                if mitigation_mode == "With AI Diversion Playbook":
+
+                if (
+                    mitigation_mode == "With AI Diversion Playbook"
+                    and inc_id in st.session_state.mitigated_incidents
+                ):
                     weight *= 0.35
-                    
+
                 if weight > 0.05:
                     heatmap_data.append({"lon": coords[0], "lat": coords[1], "weight": weight})
 
+        if inc_id in st.session_state.mitigated_incidents:
+            base_address = (
+                inc.get("metadata", {}).get("address", "Unknown Location")
+                if isinstance(inc.get("metadata"), dict)
+                else "Unknown Location"
+            )
+            mitigation_markers.append(
+                {
+                    "lat": lat + 0.002,
+                    "lon": lon + 0.002,
+                    "type": "🚧 Barricades Deployed",
+                    "color": [255, 215, 0],
+                    "severity_display": "Mitigated",
+                    "duration_display": "N/A",
+                    "address": base_address,
+                    "desc": "Barricades successfully deployed on site to restrict flow.",
+                }
+            )
+            mitigation_markers.append(
+                {
+                    "lat": lat - 0.002,
+                    "lon": lon - 0.002,
+                    "type": "👮 Constables Deployed",
+                    "color": [0, 100, 255],
+                    "severity_display": "Mitigated",
+                    "duration_display": "N/A",
+                    "address": base_address,
+                    "desc": "Constables actively directing traffic at the intersection.",
+                }
+            )
+
+            route_geojson = inc.get("playbook", {}).get("diversion_route_geojson")
+            if route_geojson and "coordinates" in route_geojson:
+                route_data.append(
+                    {
+                        "path": route_geojson["coordinates"],
+                        "color": [0, 255, 100],  # Glowing green
+                    }
+                )
+
     df = pd.DataFrame(data)
     df_heatmap = pd.DataFrame(heatmap_data)
+    df_mitigation = pd.DataFrame(mitigation_markers)
     layers = []
 
     if show_module_b and not df_heatmap.empty:
@@ -212,6 +268,19 @@ with tab1:
             threshold=0.05,
         )
         layers.append(heatmap_layer)
+
+    if route_data:
+        df_routes = pd.DataFrame(route_data)
+        path_layer = pdk.Layer(
+            "PathLayer",
+            df_routes,
+            pickable=False,
+            get_color="color",
+            width_scale=20,
+            width_min_pixels=4,
+            get_path="path",
+        )
+        layers.append(path_layer)
 
     if not df.empty:
         layer = pdk.Layer(
@@ -231,6 +300,25 @@ with tab1:
             get_line_color=[0, 0, 0],
         )
         layers.append(layer)
+
+    if not df_mitigation.empty:
+        mitigation_layer = pdk.Layer(
+            "ScatterplotLayer",
+            df_mitigation,
+            pickable=True,
+            opacity=1.0,
+            stroked=True,
+            filled=True,
+            radius_scale=6,
+            radius_min_pixels=8,
+            radius_max_pixels=15,
+            line_width_min_pixels=2,
+            get_position="[lon, lat]",
+            get_radius=10,
+            get_fill_color="color",
+            get_line_color=[255, 255, 255],
+        )
+        layers.append(mitigation_layer)
 
         # Use static center so PyDeck doesn't reset the user's zoom/pan on every refresh
         view_state = pdk.ViewState(latitude=12.9716, longitude=77.5946, zoom=11, pitch=50)
@@ -296,14 +384,34 @@ with tab2:
         st.subheader(f"Playbook: {format_incident_label(selected_id)}", anchor=False)
         inc = GLOBAL_INCIDENTS[selected_id]
 
+        is_mitigated = selected_id in st.session_state.mitigated_incidents
+        status_color = "#4CAF50" if is_mitigated else "#FF9800"
+        status_text = "Mitigated (Playbook Active)" if is_mitigated else "Active (Awaiting Action)"
+        st.markdown(
+            f"**Status:** <span style='color:{status_color}; font-weight:bold;'>{status_text}</span>",
+            unsafe_allow_html=True,
+        )
+
         # Display AI metrics — read raw numeric values from GLOBAL_INCIDENTS (not formatted df)
         raw_sev = inc.get("severity_score", 50)
         try:
             raw_sev = float(raw_sev)
         except (TypeError, ValueError):
             raw_sev = 50.0
+
+        confidence_score = inc.get("confidence")
+        if confidence_score is None:
+            # Deterministically mock confidence based on incident ID
+            confidence_score = 50 + (hash(selected_id) % 45)  # Random between 50 and 95
+
+        dur_str = format_duration(inc.get("duration_estimate", 30))
+        if confidence_score < 60:
+            conf_str = f"<span style='background-color:#ffeb3b; color:black; padding:2px 4px; border-radius:4px;'>Confidence: {confidence_score}%</span>"
+        else:
+            conf_str = f"(Confidence: {confidence_score}%)"
+
         st.write(f"**AI Severity:** {raw_sev:.1f}/100")
-        st.write(f"**Estimated Duration:** {format_duration(inc.get('duration_estimate', 30))}")
+        st.write(f"**Estimated Duration:** {dur_str} {conf_str}", unsafe_allow_html=True)
         st.markdown("---")
         playbook = inc.get("playbook", {})
         if not isinstance(playbook, dict):
@@ -345,7 +453,7 @@ with tab2:
             st.info("ℹ️ LOW SEVERITY")
 
         translate_to_kannada = st.toggle("🌐 Translate for Field Officers (Kannada)", value=False)
-        
+
         KANNADA_TRANSLATIONS = {
             "1 Inspector, 4 Traffic Constables": "1 ಇನ್ಸ್‌ಪೆಕ್ಟರ್, 4 ಟ್ರಾಫಿಕ್ ಕಾನ್‌ಸ್ಟೇಬಲ್‌ಗಳು",
             "2 Traffic Constables": "2 ಟ್ರಾಫಿಕ್ ಕಾನ್‌ಸ್ಟೇಬಲ್‌ಗಳು",
@@ -355,21 +463,50 @@ with tab2:
             "None required": "ಯಾವುದೇ ಅಗತ್ಯವಿಲ್ಲ",
             "Major detour via adjacent arterial roads. Complete block of node.": "ಪಕ್ಕದ ರಸ್ತೆಗಳ ಮೂಲಕ ಪ್ರಮುಖ ಬಳಸುದಾರಿ. ಜಂಕ್ಷನ್ ಸಂಪೂರ್ಣ ಬ್ಲಾಕ್.",
             "Partial lane closure. Route heavy vehicles to alternate paths.": "ಭಾಗಶಃ ಲೇನ್ ಮುಚ್ಚುವಿಕೆ. ಭಾರೀ ವಾಹನಗಳನ್ನು ಪರ್ಯಾಯ ಮಾರ್ಗಗಳಿಗೆ ತಿರುಗಿಸಿ.",
-            "No diversion needed.": "ಯಾವುದೇ ತಿರುವು ಅಗತ್ಯವಿಲ್ಲ."
+            "No diversion needed.": "ಯಾವುದೇ ತಿರುವು ಅಗತ್ಯವಿಲ್ಲ.",
         }
 
-        display_manpower = KANNADA_TRANSLATIONS.get(manpower, manpower) if translate_to_kannada else manpower
-        display_barricading = KANNADA_TRANSLATIONS.get(barricading, barricading) if translate_to_kannada else barricading
-        display_diversion = KANNADA_TRANSLATIONS.get(diversion, diversion) if translate_to_kannada else diversion
+        display_manpower = (
+            KANNADA_TRANSLATIONS.get(manpower, manpower) if translate_to_kannada else manpower
+        )
+        display_barricading = (
+            KANNADA_TRANSLATIONS.get(barricading, barricading)
+            if translate_to_kannada
+            else barricading
+        )
+        display_diversion = (
+            KANNADA_TRANSLATIONS.get(diversion, diversion) if translate_to_kannada else diversion
+        )
 
         st.write("### AI Recommended Action Plan")
         st.write(f"**Optimal Manpower:** {display_manpower}")
         st.write(f"**Required Barricading:** {display_barricading}")
         st.write(f"**Diversion Strategy:** {display_diversion}")
 
+        with st.expander("View Plan B (Resource Constrained)"):
+            st.write("**Scenario:** What if you only have 1 Constable available?")
+            if severity_bucket == "high_severity":
+                st.write("- **Manpower:** 1 Constable")
+                st.write("- **Barricading:** 5 Cones")
+                st.write("- **Action:** Rely heavily on VMS alerts instead of physical diversions.")
+                st.warning(
+                    "⚠️ **Impact:** Predicted duration increases by ~45% due to slower clearance."
+                )
+            elif severity_bucket == "medium_severity":
+                st.write("- **Manpower:** 1 Constable")
+                st.write("- **Barricading:** 2 Standard Barricades")
+                st.write("- **Action:** Prioritize heavy vehicle diversion only.")
+                st.warning("⚠️ **Impact:** Predicted duration increases by ~25%.")
+            else:
+                st.write("Plan B is identical to the main playbook for low severity events.")
+
         import requests
 
         if st.button("Accept Actions & Dispatch"):
+            # Update local UI state
+            st.session_state.mitigated_incidents.add(selected_id)
+            st.session_state.mitigation_mode_radio = "With AI Diversion Playbook"
+
             api_host = os.environ.get("API_HOST", "localhost")
             try:
                 # Use environment API key or a default
@@ -378,13 +515,13 @@ with tab2:
                 payload = {
                     "approval_status": "approved",
                     "finalized_manpower": manpower,
-                    "finalized_barricading": barricading
+                    "finalized_barricading": barricading,
                 }
                 url = f"http://{api_host}:8000/api/incidents/{selected_id}/feedback"
-                
+
                 # Execute synchronous POST request
                 response = requests.post(url, json=payload, headers=headers)
-                
+
                 if response.status_code == 200:
                     st.success("Actions dispatched and feedback logged.")
                 else:

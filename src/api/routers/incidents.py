@@ -3,6 +3,9 @@ from ..schemas import IncidentInput, IncidentResponse, FeedbackInput
 from ..middleware import verify_api_key
 import uuid
 import logging
+import os
+import csv
+from datetime import datetime, timezone
 
 logger = logging.getLogger("api")
 router = APIRouter(prefix="/incidents", tags=["incidents"])
@@ -100,5 +103,35 @@ async def submit_feedback(
     Submit HITL operator feedback for model retraining.
     """
     logger.info(f"Feedback received for incident {incident_id}: {feedback.model_dump()}")
-    # Here we would normally log this to a DB for model retraining
-    return {"status": "success", "message": "Feedback logged successfully"}
+
+    # Save to local CSV for model retraining
+    file_path = "dataset/retraining_queue.csv"
+    file_exists = os.path.isfile(file_path)
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+    with open(file_path, mode="a", newline="") as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(
+                [
+                    "timestamp",
+                    "incident_id",
+                    "approval_status",
+                    "finalized_manpower",
+                    "finalized_barricading",
+                ]
+            )
+        writer.writerow(
+            [
+                datetime.now(timezone.utc).isoformat(),
+                incident_id,
+                feedback.approval_status,
+                feedback.finalized_manpower,
+                feedback.finalized_barricading,
+            ]
+        )
+
+    return {
+        "status": "success",
+        "message": "Feedback logged successfully and saved to retraining_queue.csv",
+    }

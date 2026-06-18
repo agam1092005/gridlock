@@ -118,11 +118,42 @@ class PredictionOrchestrator:
 
         def run_inference():
             try:
-                matched_news = self.news_fetcher.check_for_active_keywords(
-                    incident_data=context,
-                    keywords=["rain", "protest"]
+                # Open-Meteo Weather API Integration
+                metadata = context.get("metadata") or {}
+                location = context.get("location") or {}
+                lat = metadata.get("latitude") or (
+                    location.get("latitude", 12.9716)
+                    if isinstance(location, dict)
+                    else getattr(location, "latitude", 12.9716)
                 )
-                active_weather_alert = len(matched_news) > 0
+                lon = metadata.get("longitude") or (
+                    location.get("longitude", 77.5946)
+                    if isinstance(location, dict)
+                    else getattr(location, "longitude", 77.5946)
+                )
+
+                active_weather_alert = False
+                try:
+                    import requests
+
+                    weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=precipitation"
+                    weather_resp = requests.get(weather_url, timeout=3).json()
+                    precip = weather_resp.get("current", {}).get("precipitation", 0.0)
+                    if precip > 0:
+                        active_weather_alert = True
+                        logger.info(
+                            f"Open-Meteo detected precipitation ({precip}mm) at {lat}, {lon}"
+                        )
+                except Exception as e:
+                    logger.error(f"Open-Meteo API failed: {e}")
+
+                matched_news = self.news_fetcher.check_for_active_keywords(
+                    incident_data=context, keywords=["protest", "strike", "rally"]
+                )
+                if len(matched_news) > 0:
+                    active_weather_alert = (
+                        True  # Treat major disturbances as weather delay multipliers
+                    )
 
                 X_input = self._extract_features(context)
                 sev_pred = self.lgb_sev.predict(X_input)
@@ -261,7 +292,41 @@ class PredictionOrchestrator:
 
     async def _call_playbook(self, context):
         """Lookup playbook recommendations based on incident type and severity."""
-        return self.playbook_engine.generate_playbook(context)
+        playbook = self.playbook_engine.generate_playbook(context)
+
+        # OSRM Routing API Integration
+        def fetch_osrm():
+            try:
+                import requests
+
+                metadata = context.get("metadata") or {}
+                location = context.get("location") or {}
+                lat = metadata.get("latitude") or (
+                    location.get("latitude", 12.9716)
+                    if isinstance(location, dict)
+                    else getattr(location, "latitude", 12.9716)
+                )
+                lon = metadata.get("longitude") or (
+                    location.get("longitude", 77.5946)
+                    if isinstance(location, dict)
+                    else getattr(location, "longitude", 77.5946)
+                )
+
+                # Math offset to simulate next major junction / adjacent arterial road
+                lat2 = float(lat) + 0.015
+                lon2 = float(lon) + 0.015
+
+                osrm_url = f"http://router.project-osrm.org/route/v1/driving/{lon},{lat};{lon2},{lat2}?overview=full&geometries=geojson"
+                osrm_resp = requests.get(osrm_url, timeout=3).json()
+
+                routes = osrm_resp.get("routes", [])
+                if routes:
+                    playbook["diversion_route_geojson"] = routes[0].get("geometry")
+            except Exception as e:
+                logger.error(f"OSRM API failed: {e}")
+
+        await asyncio.to_thread(fetch_osrm)
+        return playbook
 
     async def _call_shap(self, context):
         """Compute SHAP feature attributions in a threadpool."""
