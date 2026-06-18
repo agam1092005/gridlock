@@ -101,10 +101,12 @@ class LightGBMDurationModel:
         logger.info(f"Validation metrics: {metrics}")
         return metrics
 
-    def predict(self, X):
+    def predict(self, X, active_weather_alert=False):
         if self.model is None:
             raise ValueError("Model not trained.")
         median_pred = self.model.predict(X)
+        if active_weather_alert:
+            median_pred = median_pred * 1.3
         # In a real Weibull setup, we'd output parameters for a distribution
         # For this prototype, we simulate CI bounds
         return {

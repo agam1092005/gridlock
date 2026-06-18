@@ -17,6 +17,7 @@ from ..monitoring.logger import audit_logger
 from ..models.module_a.lightgbm_models import LightGBMSeverityModel, LightGBMDurationModel
 from ..models.module_b.inference import ModuleBPredictor
 from ..data_pipeline.embedding_engine import EmbeddingEngine
+from ..data_pipeline.news_fetcher import NewsFetcher
 
 logger = logging.getLogger("orchestrator")
 
@@ -57,6 +58,7 @@ class PredictionOrchestrator:
 
         self.playbook_engine = PlaybookEngine()
         self.shap_explainer = SHAPExplainer(mod_a_sev=self.lgb_sev, mod_a_dur=self.lgb_dur)
+        self.news_fetcher = NewsFetcher()
 
     def _extract_features(self, context):
         """Extract features and generate NLP embeddings from incident context."""
@@ -116,9 +118,15 @@ class PredictionOrchestrator:
 
         def run_inference():
             try:
+                matched_news = self.news_fetcher.check_for_active_keywords(
+                    incident_data=context,
+                    keywords=["rain", "protest"]
+                )
+                active_weather_alert = len(matched_news) > 0
+
                 X_input = self._extract_features(context)
                 sev_pred = self.lgb_sev.predict(X_input)
-                dur_pred = self.lgb_dur.predict(X_input)
+                dur_pred = self.lgb_dur.predict(X_input, active_weather_alert=active_weather_alert)
 
                 raw_est = dur_pred.get("estimate", [np.log1p(30)])[0]
 
