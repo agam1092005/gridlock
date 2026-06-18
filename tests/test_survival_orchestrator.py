@@ -13,9 +13,10 @@ from src.api.schemas import PredictionResponse
 
 import os
 
+
 @pytest.mark.skipif(
     not os.path.exists("models/artifacts/module_a/v1.0/cox_survival.pkl"),
-    reason="Model artifact not found in CI"
+    reason="Model artifact not found in CI",
 )
 @pytest.mark.asyncio
 async def test_survival_model_loaded_and_used():
@@ -49,7 +50,7 @@ async def test_survival_model_loaded_and_used():
 
 @pytest.mark.skipif(
     not os.path.exists("models/artifacts/module_a/v1.0/cox_survival.pkl"),
-    reason="Model artifact not found in CI"
+    reason="Model artifact not found in CI",
 )
 @pytest.mark.asyncio
 async def test_survival_model_fallback_on_invalid_data():
