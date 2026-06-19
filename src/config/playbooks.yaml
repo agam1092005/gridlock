@@ -81,3 +81,30 @@ generic_fallback:
       - "Monitor via traffic cameras"
     communications:
       - "No action required"
+
+water_logging:
+  high_severity:
+    manpower: "1 Inspector, 2 Constables (Traffic direction only)"
+    barricading: "Deploy heavy water-filled barriers and reflective cones"
+    diversion: "Block underpass. Divert 2-wheelers to elevated service roads immediately."
+    special_equipment: "Request 2 High-Capacity Dewatering Pumps"
+    agency_sync: "Alert BBMP Stormwater Drain Taskforce & BESCOM (Power cutoff risk)"
+    public_advisory: "Update Navigation APIs: 'Severe Waterlogging'. Flash FM Radio alerts."
+
+public_event:
+  high_severity:
+    manpower: "2 Inspectors, 8 Constables, 4 Home Guards"
+    barricading: "Deploy rope cordons and pedestrian channelizers"
+    diversion: "Establish 500m vehicle-free perimeter. Route traffic to arterial ring."
+    special_equipment: "Deploy Mobile VMS (Variable Message Sign) boards at major entry points."
+    agency_sync: "Coordinate with BMTC for temporary bus stop relocation"
+    public_advisory: "Issue Twitter/Social Media advisory detailing alternative parking zones."
+
+vehicle_breakdown:
+  high_severity:
+    manpower: "2 Traffic Constables"
+    barricading: "Standard warning triangles and 4 cones"
+    diversion: "Close left lane only. Merge traffic to right lanes."
+    special_equipment: "Heavy-duty Flatbed Tow Truck / Crane"
+    agency_sync: "None required"
+    public_advisory: "Update Navigation APIs: 'Lane blocked due to broken down heavy vehicle'"

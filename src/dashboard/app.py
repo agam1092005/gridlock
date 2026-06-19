@@ -563,10 +563,26 @@ with tab2:
             KANNADA_TRANSLATIONS.get(diversion, diversion) if translate_to_kannada else diversion
         )
 
-        st.write("### AI Recommended Action Plan")
-        st.write(f"**Optimal Manpower:** {display_manpower}")
-        st.write(f"**Required Barricading:** {display_barricading}")
-        st.write(f"**Diversion Strategy:** {display_diversion}")
+        special_equipment = playbook.get("special_equipment", "No special equipment needed")
+        agency_sync = playbook.get("agency_sync", "BTP internal handling only")
+        public_advisory = playbook.get("public_advisory", "Standard traffic monitoring")
+
+        st.markdown("### 📋 AI Operational Playbook")
+
+        # UI Layout: Create two columns for a dashboard feel
+        playbook_col1, playbook_col2 = st.columns(2)
+
+        with playbook_col1:
+            st.markdown("**👮‍♂️ Ground Deployment**")
+            st.info(
+                f"**Manpower:** {display_manpower}\n\n**Barricading:** {display_barricading}\n\n**Diversion:** {display_diversion}"
+            )
+
+        with playbook_col2:
+            st.markdown("**🚒 Specialized Response**")
+            st.warning(
+                f"**Equipment:** {special_equipment}\n\n**Cross-Agency:** {agency_sync}\n\n**Advisory:** {public_advisory}"
+            )
 
         with st.expander("View Plan B (Resource Constrained)"):
             st.write("**Scenario:** What if you only have 1 Constable available?")

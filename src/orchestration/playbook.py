@@ -40,6 +40,9 @@ class PlaybookEngine:
         manpower = rules.get("manpower", "1 Traffic Constable (Monitor only)")
         barricading = rules.get("barricading", "None required")
         diversion = rules.get("diversion", "No diversion needed.")
+        special_equipment = rules.get("special_equipment", "No special equipment needed")
+        agency_sync = rules.get("agency_sync", "BTP internal handling only")
+        public_advisory = rules.get("public_advisory", "Standard traffic monitoring")
 
         actions = []
         for i, a in enumerate(actions_list):
@@ -57,6 +60,9 @@ class PlaybookEngine:
             "manpower": manpower,
             "barricading": barricading,
             "diversion": diversion,
+            "special_equipment": special_equipment,
+            "agency_sync": agency_sync,
+            "public_advisory": public_advisory,
             "actions": actions,
             "communications": {
                 "public_alert": comms_list[0]
