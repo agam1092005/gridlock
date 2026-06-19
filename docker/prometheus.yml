@@ -27,42 +27,23 @@ scrape_configs:
 
   # Gridlock API metrics
   - job_name: 'gridlock_api'
-    metrics_path: '/metrics'
+    metrics_path: '/api/metrics'
     scrape_interval: 5s
     static_configs:
-      - targets: ['api:9090']
+      - targets: ['api:8000']
         labels:
           service: 'api'
           component: 'fastapi'
 
-  # PostgreSQL metrics (if postgres-exporter is deployed)
+  # PostgreSQL metrics
   - job_name: 'gridlock_postgres'
     static_configs:
-      - targets: ['postgres:5432']
-    params:
-      collect[]:
-        - database
-        - bgwriter
-        - activity
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: __param_target
-      - source_labels: [__param_target]
-        target_label: instance
-      - target_label: __address__
-        replacement: postgres:5432
+      - targets: ['postgres-exporter:9187']
 
-  # Redis metrics (if redis-exporter is deployed)
+  # Redis metrics
   - job_name: 'gridlock_redis'
     static_configs:
-      - targets: ['redis:6379']
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: __param_target
-      - source_labels: [__param_target]
-        target_label: instance
-      - target_label: __address__
-        replacement: redis:6379
+      - targets: ['redis-exporter:9121']
 
 # Remote write for long-term storage (optional)
 # remote_write:
